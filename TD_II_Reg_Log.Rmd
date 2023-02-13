@@ -1,0 +1,100 @@
+---
+title: "<FONT color='#6699CC'><FONT size = 4 ><DIV align= center> BIO_4303 : TP2 Regression Logistique </DIV></FONT></FONT>"
+output:
+    html_document:
+      highlight: textmate #,, , , espresso, , , , and  default  tango  pygments monochrome  kate zenburn haddock  
+      theme:   readable  # , , flatly, , , spacelab, united, cosmo, lumen, paper, sandstone, simplex,  yeti default cerulean journal    darkl    
+      toc: yes
+      toc_depth: 6
+      toc_float: true
+runtime: 
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{=html}
+<style type="text/css">
+body, td {font-size: 17px;}
+code.r{font-size: 5px;}
+pre { font-size: 15px;}
+</style>
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+#### <FONT color='#99CCFF'> 1 Introduction</FONT>
+##### <FONT color='#000033'> 1.1. Les librairies </FONT>
+
+```{r cars}
+rm(list = ls())
+
+LoadPack <- function(Packrequired)
+{
+  for(i in 1:length(Packrequired))
+  {
+    if(require(Packrequired[i], character.only = TRUE) == FALSE){install.packages(Packrequired[i])}
+    library(Packrequired[i],character.only = TRUE)
+  }
+  print('Package ... DONE')
+}
+
+pack <- c('ggplot2','caret', 'readr','pROC','reshape2', 'MASS', 'aod', 'kableExtra' )
+
+#-> chargement des packages
+LoadPack(pack)
+```
+
+
+##### <FONT color='#000033'> 1.2. Les données </FONT>
+```{r}
+head(dfw) %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+```
+
+
+</FONT></FONT>
+<hr style="border: 1px  solid gray">
+</hr>
+
+#### <FONT color='#99CCFF'> 2 Regression logistique multivariée</FONT>
+##### <FONT color='#000033'> 2.1. Coefficents de régression </FONT>
+##### <FONT color='#000033'> 2.2. Test de Wald</FONT>
+##### <FONT color='#000033'> 2.3. Performance du classifieur</FONT>
+##### <FONT color='#000033'> 2.4. Courbe Sen Spe vs seuil</FONT>
+
+
+
+</FONT></FONT>
+<hr style="border: 1px  solid gray">
+</hr>
+
+#### <FONT color='#99CCFF'> 3 Regression logistique ascendente</FONT>
+##### <FONT color='#000033'> 3.1. Rappels</FONT>
+##### <FONT color='#000033'> 3.2. Description de la méthode</FONT>
+##### <FONT color='#000033'> 3.3. Comparaison des résultats</FONT>
+
+
+
+</FONT></FONT>
+<hr style="border: 1px  solid gray">
+</hr>
+
+#### <FONT color='#99CCFF'> 4 Validation croisée</FONT>
+##### <FONT color='#000033'> 4.1. Les objectifs</FONT>
+###### <FONT color='#000033'> 4.1.1 Les résultats</FONT>
+###### <FONT color='#000033'> 4.1.2 Conclusion</FONT>
+
+
+
+
+</FONT></FONT>
+<hr style="border: 1px  solid gray">
+</hr>
+
+
