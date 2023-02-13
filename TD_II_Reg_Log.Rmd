@@ -2,8 +2,7 @@
 title: "<FONT color='#6699CC'><FONT size = 4 ><DIV align= center> BIO_4303 : TP2 Regression Logistique </DIV></FONT></FONT>"
 output:
     html_document:
-      highlight: textmate #,, , , espresso, , , , and  default  tango  pygments monochrome  kate zenburn haddock  
-      theme:   readable  # , , flatly, , , spacelab, united, cosmo, lumen, paper, sandstone, simplex,  yeti default cerulean journal    darkl    
+       theme:   readable  # , , flatly, , , spacelab, united, cosmo, lumen, paper, sandstone, simplex,  yeti default cerulean journal    darkl    
       toc: yes
       toc_depth: 6
       toc_float: true
@@ -54,6 +53,8 @@ LoadPack(pack)
 
 ##### <FONT color='#000033'> 1.2. Les données </FONT>
 ```{r}
+dfw <- read.csv("C:/Users/clemc/OneDrive/Bureau/ESIEE/E4/P3/Machine learning avancé/TD/Hearh_clinical_records_dataset.csv")
+
 head(dfw) %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
 ```
 
@@ -63,6 +64,23 @@ head(dfw) %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
 </hr>
 
 #### <FONT color='#99CCFF'> 2 Regression logistique multivariée</FONT>
+```{r}
+#-> recherche automatique de l'identifiant de la variable à prédire 
+pred_name <- 'event' 
+id_pred   <- which(names(dfw) %in% pred_name)   
+#-> on renomme de dataframe
+XY        <- dfw 
+#-> construction du modèle
+full_form  <- as.formula(paste0(names(dfw)[id_pred], ' ~ ', paste0(names(dfw)[-id_pred], collapse = ' + ')))
+#-> rmq : on aurait pu aussi utiolser une formule bcp plus simple ( mais moins lisible)
+# ..... ful_form <- as.formula('event ~.')
+#-> on appelle la règression logistique (qui est un modèle linéaire général)
+full_model <- glm(event ~., family=binomial(link=logit), data = dfw)
+```
+```{r}
+summary(full_model)
+```
+
 ##### <FONT color='#000033'> 2.1. Coefficents de régression </FONT>
 ##### <FONT color='#000033'> 2.2. Test de Wald</FONT>
 ##### <FONT color='#000033'> 2.3. Performance du classifieur</FONT>
