@@ -55,7 +55,22 @@ LoadPack(pack)
 ```{r}
 dfw <- read.csv("C:/Users/clemc/OneDrive/Bureau/ESIEE/E4/P3/Machine learning avancé/TD/Hearh_clinical_records_dataset.csv")
 
-head(dfw) %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+#Formatage des données
+names(dfw)[c(3,5,6,8,9,13)] <- c('cpk','frac', 'hbp', 'creat', 'Na','event')
+
+dfw$age <- round(dfw$age,digits = 0)
+dfw$sex <- factor(dfw$sex, levels = c(0,1), labels = c('F','H'))
+dfw$smoking <- factor(dfw$smoking, levels = c(0,1), labels = c('Non','Oui'))
+dfw$diabetes <- factor(dfw$diabetes, levels = c(0,1), labels = c('Non','Oui'))
+dfw$hbp <- factor(dfw$hbp, levels = c(0,1), labels = c('Non','Oui'))
+dfw$event <- factor(dfw$event, levels = c(0,1), labels = c('mrt','vv'))
+dfw$anaemia <- factor(dfw$anaemia, levels = c(0,1), labels = c('Non', 'Oui'))
+
+dfw
+new_df <- data.frame(dfw[1], dfw$cpk, dfw$frac, dfw$platelets, dfw$creat, dfw$Na, dfw$time, dfw$anaemia, dfw$diabetes, dfw$hbp, dfw$smoking, dfw$sex, dfw$event)
+names(new_df) <- c("age", "cpk", "frac", "platelets", "creat", "Na", "time", "anaemia", "diabetes", "hbp", "smoking", "sex", "event")
+new_df  
+head(new_df) %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
 ```
 
 
@@ -71,7 +86,7 @@ id_pred   <- which(names(dfw) %in% pred_name)
 #-> on renomme de dataframe
 XY        <- dfw 
 #-> construction du modèle
-full_form  <- as.formula(paste0(names(dfw)[id_pred], ' ~ ', paste0(names(dfw)[-id_pred], collapse = ' + ')))
+#full_form  <- as.formula(paste0(names(dfw)[id_pred], ' ~ ',paste0(names(dfw)[-id_pred], collapse = ' + ')))
 #-> rmq : on aurait pu aussi utiolser une formule bcp plus simple ( mais moins lisible)
 # ..... ful_form <- as.formula('event ~.')
 #-> on appelle la règression logistique (qui est un modèle linéaire général)
@@ -82,9 +97,82 @@ summary(full_model)
 ```
 
 ##### <FONT color='#000033'> 2.1. Coefficents de régression </FONT>
+##### <FONT color='#000033'> 2.1.1 Inférence statistique </FONT>
+
+##### <FONT color='#000033'> 2.1.2 Intervalle de confiance</FONT>
+```{r}
+head(confint.default(full_model) )  %>% kbl(booktabs = TRUE) %>% kable_styling( position = "center", full_width = FALSE)
+```
+
+
 ##### <FONT color='#000033'> 2.2. Test de Wald</FONT>
+```{r}
+ t <- rbind(rep(0,13)) ; t[2] <- 1 ; t[7] <- -1
+ wald.test ( b  =  coef (full_model),  Sigma  =  vcov (full_model),  L  = t)
+```
+
+
+```{r}
+ wald.test ( b  =  coef (full_model),  Sigma  =  vcov (full_model),  Terms  = c(4,7))
+```
+
 ##### <FONT color='#000033'> 2.3. Performance du classifieur</FONT>
 ##### <FONT color='#000033'> 2.4. Courbe Sen Spe vs seuil</FONT>
+###### <FONT color='#000033'> 2.4.1 Script</FONT>
+```{r}
+Valid_ROC <- function(obs, pred, direction = 0, threshold  = NULL, graph = T)
+{
+  require(pROC)
+  require(caret)
+  if(!is.factor(obs)){obs <- factor(obs)}
+  lev        <- levels(obs)
+  data_logit <- data.frame(obs = factor(obs), pred = pred)
+  data_roc   <- roc(obs,pred)
+  cir        <- ci(data_roc)
+  data_spec  <- data.frame( sens    = data_roc$sensitivities ,
+                            spec    = data_roc$specificities ,
+                            thr     = data_roc$thresholds    ,
+                            youden  = data_roc$sensitivities + data_roc$specificities - 1
+                           )
+  cir <- data.frame(roc = c(cir, youden = max(data_spec$youden) )) ; rownames(cir) <-c('AUC_lower','AUC','AUC_upper','youden')
+  #-> si argument nulle alors calcul du seuil par la méthode de Youden
+  if (is.null(threshold))
+  {
+    id       <- which.max(data_spec$youden) ; data_spec[id,] ;   
+    best_thr <- data_spec[id,3]
+  }else{best_thr <- threshold}
+  #-> binarisation
+  if(direction == 0){dir_name <- lev[1] ; ndir_name <- lev[2] }else{dir_name = lev[2] ; ndir_name <- lev[1]}
+  fac_roc    <- rep(dir_name,nrow(data_logit))
+  id         <- which(pred >= best_thr) ; fac_roc[id] <- ndir_name ; fac_roc <- factor(fac_roc)
+  conf_mat_1 <- confusionMatrix(fac_roc, obs)
+  result     <- data.frame(Confusion = c(                 conf_mat_1$overall[1],
+                                                          conf_mat_1$overall[3], 
+                                                          conf_mat_1$overall[4], 
+                                                          conf_mat_1$byClass[1],
+                                                          conf_mat_1$byClass[2],
+                                                          conf_mat_1$byClass[3],
+                                                          conf_mat_1$byClass[4],
+                                                          conf_mat_1$byClass[7],
+                                                          Threshold  = best_thr
+                                          ) 
+                         )
+  all_result <- list( result = result, Confusion = conf_mat_1$table, roc = cir)
+  #--> graphique
+  if(graph)
+    {  data_gr    <- melt(data_spec, id.vars = 'thr') 
+       gr         <- ggplot(data = data_gr) + geom_line(aes(x = thr, y = value, color = variable )) + 
+       ylab('Probability') + xlab('threshold') + theme(legend.title = element_blank()) + geom_vline( xintercept = best_thr, color = '#0066CC')
+      #--> courbe roc
+      plot.roc(data_roc, print.auc=TRUE, print.thres=TRUE,col="#0066CC")
+      all_result[['graph']] <- gr
+  }  
+      return( all_result)
+}
+result <- Valid_ROC(XY$event, full_model$fitted.values, graph = F)
+```
+###### <FONT color='#000033'> 2.4.2 Résultats</FONT>
+
 
 
 
@@ -95,7 +183,27 @@ summary(full_model)
 #### <FONT color='#99CCFF'> 3 Regression logistique ascendente</FONT>
 ##### <FONT color='#000033'> 3.1. Rappels</FONT>
 ##### <FONT color='#000033'> 3.2. Description de la méthode</FONT>
+```{r}
+empty_form    <- as.formula(paste0(names(dfw)[id_pred] ,'~1'))
+ full_form     <- as.formula(paste0(names(dfw)[id_pred], ' ~ ', paste0(names(dfw)[-id_pred], collapse = ' + ')))
+ empty_model   <- glm(empty_form , family=binomial(link=logit), data = XY)
+ full_model    <- glm(full_form  , family=binomial(link=logit), data = XY)
+ forward_model <-  stepAIC(empty_model,direction = 'forward',  scope = list(upper = full_model), trace = F)
+ summary(forward_model)
+```
+###### <FONT color='#000033'> 3.2.1 Résultats</FONT>
+```{r}
+result_forward <- Valid_ROC(XY$event, forward_model$fitted.values, graph = F)
+```
+###### <FONT color='#000033'> 3.2.2 Courbe ROC</FONT>
+
+
 ##### <FONT color='#000033'> 3.3. Comparaison des résultats</FONT>
+```{r}
+roc1 <- plot.roc(factor(XY$event),forward_model$fitted.values, percent = T, col = '#CC3300')
+roc2 <- lines.roc(factor(XY$event),full_model$fitted.values, percent=T, col="#0066CC",  print.thres=TRUE)
+legend("bottomright", legend=c("ascend_model", "full_model"), col=c('#CC3300', "#0066CC"), lwd=2)
+```
 
 
 
