@@ -63,7 +63,7 @@ dfw$sex <- factor(dfw$sex, levels = c(0,1), labels = c('F','H'))
 dfw$smoking <- factor(dfw$smoking, levels = c(0,1), labels = c('Non','Oui'))
 dfw$diabetes <- factor(dfw$diabetes, levels = c(0,1), labels = c('Non','Oui'))
 dfw$hbp <- factor(dfw$hbp, levels = c(0,1), labels = c('Non','Oui'))
-dfw$event <- factor(dfw$event, levels = c(0,1), labels = c('mrt','vv'))
+dfw$event <- factor(dfw$event, levels = c(0,1), labels = c('dcd','vv'))
 dfw$anaemia <- factor(dfw$anaemia, levels = c(0,1), labels = c('Non', 'Oui'))
 
 dfw
@@ -173,6 +173,18 @@ result <- Valid_ROC(XY$event, full_model$fitted.values, graph = F)
 ```
 ###### <FONT color='#000033'> 2.4.2 Résultats</FONT>
 
+
+```{r}
+result$roc
+```
+```{r}
+result$result
+```
+
+
+```{r}
+result$Confusion
+```
 
 
 
