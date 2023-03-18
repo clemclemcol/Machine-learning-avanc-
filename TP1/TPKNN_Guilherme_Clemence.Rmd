@@ -1,0 +1,343 @@
+---
+title: "<FONT color='#000000'><FONT size = 4 ><DIV align= center> KNN</DIV></FONT></FONT>"
+output:
+  html_document:
+    highlight: textmate 
+    theme:   readable  
+    toc: yes
+    toc_depth: 6
+    toc_float: true
+---
+```{=html}
+<style type="text/css">
+  body, td {font-size: 17px;}
+code.r{font-size: 3px;}
+pre { font-size: 15px;}
+</style>
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F)
+```
+
+<FONT color=' #000000'><FONT size = 4 >
+  
+::: {align="center"}
+K plus proche voisin
+:::
+  
+</FONT></FONT>
+  
+<FONT color='#0099CC'><FONT size = 4 >
+  
+::: {align="center"}
+Guilherme & Clémence : Esiee Paris 2022-2023
+:::
+  
+</FONT></FONT>
+  
+<hr style="border: 1px  solid black">
+  
+</hr>
+
+
+#### <FONT color='#001279'> 1. Introduction TP1 Approche de la méthode KNN </FONT>
+
+Nous avons étudiés la méthode des k plus proche voisins (KNN). KNN est une méthode de classification supervisée consistant à prédire les données d'une variable en fonction de ces voisins.
+
+2 étapes au KNN.
+A. Trouver les k plus proches observations
+B. Utiliser une règle de décision à la majorité pour classer la nouvelle observation
+
+Nous utilisons le jeu de données Hearh_clinical_records_dataset.csv. Notre objectif est de prédire la survie de patients hospitalisés en service cardiologie en fonction de différentes variables de nature sérologique, démographique (sexe, age) et des antécédents (tabagisme, diabète).
+
+Les Objectifs :
+
+* Transformation des variables catégorielles
+* Standardisation des données continues
+
+Les Packages:
+
+* class pour réaliser les k plus proches voisins
+* caret pour réaliser les échantillonnages et calculer la matrice des confusions
+* readr pour lire les données
+* formattable pour exporter les tableaux dans Markdown
+* pROC pour les courbes ROC
+
+
+```{r, include=FALSE}
+rm(list = ls())
+
+library(class)
+library(caret)
+library(readr)
+library(formattable)
+library(pROC)
+library(kableExtra) 
+
+df <- read_csv("Hearh_clinical_records_dataset.csv")
+df <- data.frame(df)
+```
+
+La fonction One_Hot données est utilisée pour l'encodage des variables catégorielles
+
+```{r}
+One_Hot <- function(values)
+{
+  n      <-  length(values)
+  l      <-  unique(values)
+  iter  <- 1
+  df_dummy <- NULL 
+  for (i in l)
+  {
+    out <- rep(0,n)
+    out[which(values == i)] <- 1
+    df_dummy <- cbind(df_dummy,out)
+    
+    
+    }
+
+  df_dummy <- data.frame(df_dummy) ; names(df_dummy) <- l
+  return(df_dummy)
+}
+```
+
+#### <FONT color='#001279'> 1. Préparation des données (Pre-processing) </FONT>
+
+On démarre en modifiant les noms des variables pour une question de simplification cela vaut pour : 
+
+* creatinine_phosphokinase devient cpk
+* high_blood_pressure devient hbp
+* serum_creatinine devient creat
+* serum_sodium devient Na
+* DEATH_EVENT devient event
+
+```{r}
+colnames(df)[c(3,5,6,8,9,13)] <- c('cpk','frac','hbp','creat','Na','event')
+```
+
+##### <FONT color='#34495E'> 1.1 Factorisation </FONT>
+
+Les variables précédentes sont transformées en variables factorielles avec des nouveaux labels :
+
+* Les variables catégorielles (binaires) du prédicteur sont les suivantes
+  + anemia (0-Non / 1-Oui)
+  + diabetes (0-Non / 1-Oui)
+  + hbp (0-Non / 1-Oui)
+  + sex (0-F / 1-H)
+  + smoking (0-Non / 1-Oui)
+* La variable à prédire
+  + DEATH_EVENT (0-dcd,1-vv)
+  
+```{r}
+sex <- factor(df$sex, levels = c(0,1), labels = c('F','H')) 
+event <- factor(df$event, levels = c(0,1), labels = c('dcd','vv')) 
+df_cat <- c('anaemia','diabetes','hbp','smoking')
+YorN <- sapply(df_cat, function(x){df[[x]] <- factor(df[[x]], levels = c(0,1), labels = c('Non','Oui'))})
+
+df2 <- data.frame(df[,c(1,3,5,7,8,9,12)],YorN,sex,event)
+
+```
+
+* On retrouve le jeu de donnée trier:
+
+```{r}
+
+head(df2,10) %>% kbl(digits=3) %>%   kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>%  scroll_box(width = "1000px", height = "400px")
+```
+
+##### <FONT color='#34495E'> 1.2 Standardisation des données numérique </FONT>
+
+La méthode des k plus proches voisins est fondée sur le calcul de distance (principalement euclidienne : norme L2). Comme nous l’avons déjà vu, le résultat obtenu est dépendant des métriques utilisées. Il est donc important de standardiser les données (centrage et réduction):
+
+On cherche donc à centrer réduire nos données pour que chacune est une moyenne de 0 et un écart-type de 1 pour réaliser cela on utilise la fonction scale
+
+```{r}
+id_num <- which(sapply(df2, is.numeric)) #Selection des données numériques
+df_num <- df2[, id_num]
+stand_df <- scale(df_num,center = TRUE,scale = TRUE) #centrage et réduction des données
+```
+
+```{r}
+head(data.frame(stand_df),10) %>% kbl(digits=3) %>%   kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>%  scroll_box(width = "1000px", height = "400px")
+```
+
+##### <FONT color='#34495E'> 1.3 One Hot Encoding </FONT>
+
+Informations relative au One Hot Encoding
+
+* Le One-hot encoding est souvent utilisé lorque nous avons un prédicteur (matrice des variables explicatives) qui est constitué de variables catégorielles et de variables continues. Pour certaines méthodes tel que les KNN, qui sont fondées sur l’estimation d’une distance euclidienne, il est nécessaire de réaliser un One Hot Encoding pour transformer les variables catégorielles en variables “numériques”
+
+* Cette méthode peut augmenter le nombre de variables de manière très importante et peut nuire à ses performances (en termes de rapidité d’exécution) si le nombre de niveaux de facteurs est élevé
+
+```{r}
+#One Hot anaemia
+anaemia_OH <- One_Hot(df2[,c(8)])#On applique la fonction One Hot Encoding au dataframe des variables catégorielles
+anaemia_Non <- anaemia_OH[,c(1)]
+anaemia_Oui <- anaemia_OH[,c(2)]
+
+#One Hot diabetes
+diabetes_OH <- One_Hot(df2[,c(9)])
+diabetes_Non <- diabetes_OH[,c(1)]
+diabetes_Oui <- diabetes_OH[,c(2)]
+
+#One Hot hbp
+hbp_OH <- One_Hot(df2[,c(10)])
+hbp_Non <- hbp_OH[,c(1)]
+hbp_Oui <- hbp_OH[,c(2)]
+
+#One Hot smoking
+smoking_OH <- One_Hot(df2[,c(11)])
+smoking_Non <- smoking_OH[,c(1)]
+smoking_Oui <- smoking_OH[,c(2)]
+
+#One Hot sex
+sex_OH <- One_Hot(df2[,c(12)])
+sex_Non <- sex_OH[,c(1)]
+sex_Oui <- sex_OH[,c(2)]
+
+df_final <- data.frame(anaemia_Non,anaemia_Oui,diabetes_Non,diabetes_Oui,hbp_Non,hbp_Oui,smoking_Non,smoking_Oui,sex_Non,sex_Oui,stand_df[,c(1:7)],event)
+```
+
+Ci-dessous les 10 premières valeurs du dataset final attendu après l'exécution de la fonction :
+
+```{r}
+format_table(head(df_final,10))
+```
+
+
+
+#### <FONT color='#001279'> 2. KPPV et Validation croisée </FONT>
+
+##### <FONT color='#34495E'> 2.1 Jeu de validation </FONT>
+
+
+* On fic xe la graine : set.seed(123479)
+
+```{r}
+xe <- set.seed(123479)
+```
+
+* % des données pour la validation = 0.2
+
+```{r}
+frac_validation <- 0.2 # Coefficent de % des données pour la validation
+```
+
+##### <FONT color='#34495E'> 2.2 Estimation du nombre de plus proche voisin optimal </FONT>
+
+* pour l’échantillonnage prendre :
+  +75 % du jeux de données en entrainement
+  +25 % du jeux de données en test
+* kppv de 1 à 90 par pas de 1
+* tester 100 échantillons par kppv
+
+```{r}
+n_data <- nrow(df2) # n_data est le nombre de ligne de données du dataframe df2
+Y_name <- 'event' # Y_name est le nom de la variable que l'on veut prédire
+
+id_Y <- which( names(df_final)  %in% Y_name)
+id_X <- which(!names(df_final)  %in% Y_name)
+#Création des 2 partitions 75% du jeux de données en entrainement et 25 % du jeux de données en test
+
+id_validation    <- createDataPartition(1:n_data, p = frac_validation, list = F)
+n_validation     <-length(id_validation)
+
+XY_validation    <- df_final[id_validation,]
+X_validation     <- df_final[id_validation, id_X] 
+Y_validation     <- df_final[id_validation, id_Y]      # variable à prédire     
+
+XY_trainingtest   <- df_final[ - id_validation, ]
+X_trainingtest    <- df_final[ - id_validation, id_X]
+Y_trainingtest    <- df_final[ - id_validation, id_Y]
+
+n_trainingtest    <- nrow(XY_trainingtest)
+
+knn_val       <-  seq(1,90,1)
+frac_training <-  0.75
+folds         <-  100
+
+```
+
+
+```{r}
+MSE <- NULL
+for(i in 1: folds )
+{
+  
+  id_train <-  createDataPartition(1:n_trainingtest, p = frac_training, list = F)
+  
+  X_train <- XY_trainingtest[id_train,id_X]
+  Y_train <- XY_trainingtest[id_train,id_Y]
+  
+  X_test <- XY_trainingtest[- id_train,id_X]
+  Y_test <- XY_trainingtest[- id_train,id_Y]
+  Err <- NULL
+  for (ik in knn_val)
+  {
+   
+
+    Y_pred <- knn(X_train,X_test,Y_train, ik)
+    
+    Err <- c(Err, sum(Y_pred != Y_test) / length(Y_pred) )
+  }
+  
+  MSE <- cbind(MSE, Err) 
+}
+```
+
+```{r}
+MSE      <- data.frame(MSE); row.names(MSE) <- paste0('k_',knn_val) ; names(MSE) <- paste0('fold_',1:folds)
+mean_mse <- apply(MSE,1, mean)
+sd_mse   <- apply(MSE,1, sd)
+knn_stat <- data.frame(mean =  mean_mse,sd = sd_mse)
+
+stat <- data.frame (x = knn_val, mean = mean_mse, std = sd_mse)
+gr_1 <- ggplot() + geom_line(data = stat, aes(x = x, y = mean))
+gr_1 <- gr_1 + xlab('KPPV') + ylab("% Error") 
+gr_1
+
+```
+le graphique ci-dessus montre les moyennes des % d’erreur en fonction des kppv. Il s’agit donc d’un profil de type ‘biais variance’
+
+Rappel d'un profil biais variance
+
+#### <FONT color='#001279'> 3. Prédiction sur les données de validation </FONT>
+
+Calcul de la matrice de confusions :
+
+```{r}
+
+opt_kppv <- which.min(mean_mse) ; cat('best k = \n', opt_kppv)
+
+Ypred_valid   <- knn(X_trainingtest,X_validation,Y_trainingtest, opt_kppv)
+confusionMatrix(factor(Ypred_valid), factor(Y_validation) )
+```
+
+* On calcule la courbe ROC avec la fonction roc du package pROC :
+
+```{r}
+Ypred_validPr <- knn(X_trainingtest, X_validation, Y_trainingtest, prob = T, opt_kppv)
+get_val       <- attr(Ypred_validPr, 'prob')
+
+r <- roc(Y_validation, get_val )
+
+plot.roc(r, print.auc=TRUE, auc.polygon=TRUE, auc.polygon.col=rgb(.3,0,.8,0.2), print.thres=TRUE)
+```
+```{r}
+r$auc
+```
+#### <FONT color='#001279'> 4.Conclusion </FONT>
+
+Pour conclure sur notre modèle analysons les données de la matrice de confusion, soit les données de prédiction de notre modèle.
+
+On peut voir que notre modèle a correctement prédit 40 vrais positifs et 8 vrai négatifs, cependant, 9 faux positifs et 3 faux négatifs ont été prédit. Le modèle a donc une précision global de 80% ce qui est assez bon mais il est nécessaire de regarder d'autre données pour conclure de manière plus rigoureuse si on regarde les données de la sensibilité et la spécificité, nous avons:
+
+* Sensitivity : 0.9302  Donc le taux de détection de vrais positifs est satisfaisant.    
+* Specificity : 0.4706  Par ailleurs le taux de vrai négatifs est inférieur à 50 % ce qui n'est pas satisfaisant
+
+Si l'on regarde:
+* Balanced Accuracy : 0.7004 Cette donnée est la moyenne arithmétique de la sensibilité et de la spécificité (sensibilité + spécificité) / 2)
+
+C'est une mesure de la performance d'un modèle de classification binaire qui tient compte à la fois de la sensibilité et de la spécificité du modèle et ce en prenant en compte le fait que dans notre modèle la classe dcd est majoritaire.
+Alors on tombe à 70 % environ ce qui est moyennement bon compte tenu de l'objectif qui est de prédire la survie de patients hospitalisés en service cardiologie en fonction des différentes variables.

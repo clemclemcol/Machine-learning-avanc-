@@ -1,0 +1,38 @@
+Ce code en R est un script pour la classification KPPV (k plus proches voisins). Il sépare les données en deux ensembles, un ensemble de validation et un ensemble d'entraînement / test. Ensuite, il effectue un nombre spécifié de plis de validation croisée en utilisant un pourcentage spécifié des données d'entraînement / test pour l'entraînement. Pour chaque pli, il calcule une erreur en utilisant différentes valeurs de k (nombre de voisins les plus proches) pour les données de validation et enregistre ces erreurs pour chaque valeur de k. Enfin, il calcule la moyenne et l'écart-type de ces erreurs pour chaque valeur de k et en détermine la meilleure valeur en trouvant celle qui a la plus petite erreur moyenne.
+
+Voici une description détaillée de chaque section de code:
+
+dfw est un data frame qui contient les données.
+
+n_data est le nombre de lignes dans les données.
+
+frac_validation est le pourcentage des données à utiliser pour la validation.
+
+Y_name est le nom de la variable cible que nous voulons prédire.
+
+id_Y et id_X sont les indices des colonnes dans les données qui correspondent respectivement à la variable cible et aux variables explicatives.
+
+id_validation est un vecteur d'indices qui correspond aux données à utiliser pour la validation.
+
+XY_validation, X_validation et Y_validation sont respectivement les données totales, les variables explicatives et la variable cible pour la validation.
+
+XY_trainingtest, X_trainingtest et Y_trainingtest sont respectivement les données totales, les variables explicatives et la variable cible pour l'entraînement et les tests.
+
+n_trainingtest est le nombre de lignes dans les données d'entraînement / test.
+
+knn_val est un vecteur de valeurs de k à tester.
+
+frac_training est le pourcentage des données d'entraînement / test à utiliser pour l'entraînement.
+
+folds est le nombre de plis de validation croisée à effectuer.
+Dans les lignes 27 à 37, on utilise une boucle for pour parcourir les différents knn_val et pour prédire les valeurs de Y_test en utilisant la fonction knn(). Pour chaque itération de la boucle intérieure, le modèle knn est entraîné sur les données X_train et Y_train et utilisé pour prédire les valeurs de Y_test. La précision est calculée en comparant les valeurs prédites avec les valeurs réelles Y_test et en utilisant la formule: sum(Y_pred != Y_test) / length(Y_pred). Le résultat est stocké dans la liste Err.
+
+Dans les lignes 39 à 41, on combine les erreurs pour chaque itération de la boucle extérieure pour créer une matrice MSE.
+
+Dans les lignes 43 à 45, on calcule la moyenne et l'écart-type des erreurs pour chaque k_val et on les stocke dans un data.frame nommé knn_stat.
+
+Dans les lignes 47 à 49, on utilise ggplot() pour créer un graphique montrant la moyenne des erreurs en fonction de k_val.
+
+Dans la ligne 51, on utilise la fonction which.min() pour trouver la valeur optimale de k_val pour laquelle la moyenne des erreurs est minimale.
+
+Enfin, dans les lignes 53 à 54, on utilise la valeur optimale de k_val pour entraîner le modèle sur les données de formation et prédire les valeurs de Y_validation. On utilise la fonction confusionMatrix() pour afficher une matrice de confusion.
