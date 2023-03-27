@@ -1,0 +1,186 @@
+---
+title: "TD_III_Arbre"
+author: "COLNOT Clémence & PEREIRA-TAVARES Guilherme"
+date: "2023-03-17"
+output: html_document
+---
+
+```{=html}
+<style type="text/css">
+body, td {font-size: 17px;}
+code.r{font-size: 5px;}
+pre { font-size: 15px;}
+</style>
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+
+#### <FONT color='#99CCFF'> 1 Introduction</FONT>
+
+
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+#### <FONT color='#99CCFF'> 2 Description de la méthode CART</FONT>
+##### <FONT color='#99CCFF'> 2.1 Changement des packages et des données</FONT>
+###### <FONT color='#99CCFF'> 2.1.1. Packages</FONT>
+```{r}
+rm(list = ls())
+LoadPack <- function(Packrequired)
+{
+  for(i in 1:length(Packrequired))
+  {
+    if(require(Packrequired[i], character.only = TRUE) == FALSE){install.packages(Packrequired[i])}
+    library(Packrequired[i],character.only = TRUE)
+  }
+  print('Package ... DONE')
+}
+pack <- c('ggplot2','caret', 'pROC','reshape2', 'kableExtra','rpart','rpart.plot' )
+#-> chargement des packages
+LoadPack(pack)
+```
+
+```{r}
+#-> Chargement des données 
+df <- read.table('heart.csv', header = T, sep = ',', dec = '.')
+```
+
+```{r}
+Valid_ROC <- function(obs, pred, direction = 0, threshold  = NULL, graph = T)
+{
+  require(pROC)
+  require(caret)
+  if(!is.factor(obs)){obs <- factor(obs)}
+  lev        <- levels(obs)
+  data_logit <- data.frame(obs = factor(obs), pred = pred)
+  data_roc   <- roc(obs,pred)
+  cir        <- ci(data_roc)
+  data_spec  <- data.frame( sens    = data_roc$sensitivities ,
+                            spec    = data_roc$specificities ,
+                            thr     = data_roc$thresholds    ,
+                            youden  = data_roc$sensitivities + data_roc$specificities - 1
+                           )
+  cir <- data.frame(roc = c(cir, youden = max(data_spec$youden) )) ; rownames(cir) <-c('AUC_lower','AUC','AUC_upper','youden')
+  #-> si argument nulle alors calcul du seuil par la méthode de Youden
+  if (is.null(threshold))
+  {
+    id       <- which.max(data_spec$youden) ; data_spec[id,] ;   
+    best_thr <- data_spec[id,3]
+  }else{best_thr <- threshold}
+  #-> binarisation
+  if(direction == 0){dir_name <- lev[1] ; ndir_name <- lev[2] }else{dir_name = lev[2] ; ndir_name <- lev[1]}
+  fac_roc    <- rep(dir_name,nrow(data_logit))
+  id         <- which(pred >= best_thr) ; fac_roc[id] <- ndir_name ; fac_roc <- factor(fac_roc)
+  conf_mat_1 <- confusionMatrix(fac_roc, obs)
+  result     <- data.frame(Confusion = c(                 conf_mat_1$overall[1],
+                                                          conf_mat_1$overall[3], 
+                                                          conf_mat_1$overall[4], 
+                                                          conf_mat_1$byClass[1],
+                                                          conf_mat_1$byClass[2],
+                                                          conf_mat_1$byClass[3],
+                                                          conf_mat_1$byClass[4],
+                                                          conf_mat_1$byClass[7],
+                                                          Threshold  = best_thr
+                                          ) 
+                         )
+  all_result <- list( result = result, Confusion = conf_mat_1$table, roc = cir)
+  #--> graphique
+  if(graph)
+    {  data_gr    <- melt(data_spec, id.vars = 'thr') 
+       gr         <- ggplot(data = data_gr) + geom_line(aes(x = thr, y = value, color = variable )) + 
+       ylab('Probability') + xlab('threshold') + theme(legend.title = element_blank()) + geom_vline( xintercept = best_thr, color = '#0066CC')
+      #--> courbe roc
+      plot.roc(data_roc, print.auc=TRUE, print.thres=TRUE,col="#0066CC")
+      all_result[['graph']] <- gr
+  }  
+      return( all_result)
+}
+```
+
+###### <FONT color='#99CCFF'> 2.1.2. Description des données</FONT>
+```{r}
+df
+```
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+#### <FONT color='#99CCFF'> 3 Description des fonctions rpart.control et rpart</FONT>
+
+##### <FONT color='#99CCFF'> 3.1 Fonction rpart.control</FONT>
+
+###### <FONT color='#99CCFF'> 3.2 Fonction rpart</FONT>
+
+```{r}
+#-> génération de la graine pour la validation croisée
+set.seed(785123)
+options_1 <- rpart.control(xval = 10, cp = 0, minbucket = 1)
+cart_1    <- rpart("HeartDisease~.",data = df, parm = list(split = 'gini'), control = options_1)    
+```
+
+
+```{r}
+g1 =  prp(cart_1, cex  = 0.05)
+```
+
+```{r}
+pred_cart_1     <- predict(cart_1, type = 'prob')
+result          <- Valid_ROC( as.numeric(df$HeartDisease) - 1, pred_cart_1[,2], graph = T)
+```
+
+
+###### <FONT color='#99CCFF'> 3.3 Fonction rpart</FONT>
+
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+#### <FONT color='#99CCFF'> 4 Elagage</FONT>
+```{r}
+data.frame(cart_1$cptable)  %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+```
+
+
+```{r}
+plotcp(cart_1)
+```
+
+```{r}
+prune_1 = prune(cart_1, cp = 0.0073171)
+rpart.plot(prune_1, type = 5)
+```
+
+```{r}
+pred_prune_1     <- predict(prune_1, type = 'prob')
+result_prune     <- Valid_ROC( as.numeric(df$HeartDisease) - 1, pred_prune_1[,2], graph = T)
+```
+
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+#### <FONT color='#99CCFF'> 5 Déploiement - Validation</FONT>
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+
+
