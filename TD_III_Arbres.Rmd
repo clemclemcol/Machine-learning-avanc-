@@ -24,8 +24,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 #### <FONT color='#99CCFF'> 1 Introduction</FONT>
 
-
-
 </FONT></FONT>
 
 <hr style="border: 1px  solid gray">
@@ -34,6 +32,7 @@ knitr::opts_chunk$set(echo = TRUE)
 #### <FONT color='#99CCFF'> 2 Description de la méthode CART</FONT>
 ##### <FONT color='#99CCFF'> 2.1 Changement des packages et des données</FONT>
 ###### <FONT color='#99CCFF'> 2.1.1. Packages</FONT>
+
 ```{r}
 rm(list = ls())
 LoadPack <- function(Packrequired)
@@ -108,6 +107,7 @@ Valid_ROC <- function(obs, pred, direction = 0, threshold  = NULL, graph = T)
 ```
 
 ###### <FONT color='#99CCFF'> 2.1.2. Description des données</FONT>
+
 ```{r}
 df
 ```
@@ -151,6 +151,7 @@ result          <- Valid_ROC( as.numeric(df$HeartDisease) - 1, pred_cart_1[,2], 
 
 </hr>
 #### <FONT color='#99CCFF'> 4 Elagage</FONT>
+
 ```{r}
 data.frame(cart_1$cptable)  %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
 ```
@@ -168,6 +169,12 @@ rpart.plot(prune_1, type = 5)
 ```{r}
 pred_prune_1     <- predict(prune_1, type = 'prob')
 result_prune     <- Valid_ROC( as.numeric(df$HeartDisease) - 1, pred_prune_1[,2], graph = T)
+result_prune$roc
+```
+
+```{r}
+result_prune$Confusion
+result_prune$result
 ```
 
 
@@ -177,6 +184,49 @@ result_prune     <- Valid_ROC( as.numeric(df$HeartDisease) - 1, pred_prune_1[,2]
 
 </hr>
 #### <FONT color='#99CCFF'> 5 Déploiement - Validation</FONT>
+
+```{r}
+id_validation    <- createDataPartition(1:nrow(df), p = 0.80, list = F) 
+
+XY_validation    <- df[id_validation,]     # variable à prédire
+
+```
+
+```{r}
+set.seed(785123)
+options_2 <- rpart.control(xval = 10, cp = 0, minbucket = 1)
+XY_validation$HeartDisease <- as.factor(XY_validation$HeartDisease)
+cart_2    <- rpart("HeartDisease~.",data = XY_validation, parm = list(split = 'gini'), control = options_2)  
+```
+
+```{r}
+data.frame(cart_2$cptable)  %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+
+```
+
+```{r}
+plotcp(cart_2)
+
+```
+
+
+```{r}
+prune_2 = prune(cart_2, cp = 0.0073171)
+rpart.plot(prune_2, type = 5)
+```
+
+```{r}
+pred_prune_2     <- predict(prune_2, type = 'prob')
+result_prune_2     <- Valid_ROC( as.numeric(XY_validation$HeartDisease) - 1, pred_prune_2[,2], graph = T)
+result_prune_2$roc
+
+```
+
+```{r}
+result_prune_2$Confusion
+result_prune_2$result
+```
+
 
 </FONT></FONT>
 
