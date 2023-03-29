@@ -127,6 +127,7 @@ df
 #-> génération de la graine pour la validation croisée
 set.seed(785123)
 options_1 <- rpart.control(xval = 10, cp = 0, minbucket = 1)
+df$HeartDisease <- as.factor(df$HeartDisease)
 cart_1    <- rpart("HeartDisease~.",data = df, parm = list(split = 'gini'), control = options_1)    
 ```
 
