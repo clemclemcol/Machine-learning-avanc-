@@ -1,0 +1,152 @@
+---
+title: "<FONT color='#6699CC'><FONT size = 4 ><DIV align= center> BIO_4303 : TP4 Foret aleatoire </DIV></FONT></FONT>"
+output:
+    html_document:
+       theme:   readable  # , , flatly, , , spacelab, united, cosmo, lumen, paper, sandstone, simplex,  yeti default cerulean journal    darkl    
+      toc: yes
+      toc_depth: 6
+      toc_float: true
+runtime: 
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{=html}
+<style type="text/css">
+body, td {font-size: 17px;}
+code.r{font-size: 5px;}
+pre { font-size: 15px;}
+</style>
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+
+#### <FONT color='#99CCFF'> 1 Introduction</FONT>
+
+#### <FONT color='#99CCFF'> 2 Environnement</FONT>
+```{r}
+rm(list = ls())
+LoadPack <- function(Packrequired)
+{
+  for(i in 1:length(Packrequired))
+  {
+    if(require(Packrequired[i], character.only = TRUE) == FALSE){install.packages(Packrequired[i])}
+    library(Packrequired[i],character.only = TRUE)
+  }
+}
+pack <- c('ggplot2','caret', 'pROC','reshape2', 'kableExtra','randomForest','randomForestExplainer', 'colorRamps' )
+#-> chargement des packages
+LoadPack(pack)
+#-> Chargement des données
+df1 <- read.table('heart.csv', header = T, sep = ',', dec = '.')
+
+#-> Ne pas oublier de transformer la variable à prédire en variable factorielle
+df1$HeartDisease = factor(df1$HeartDisease )
+
+head(df1,10) %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+```
+
+```{r}
+Valid_ROC <- function(obs, pred, direction = 0, threshold  = NULL, graph = T)
+{
+  require(pROC)
+  require(caret)
+  if(!is.factor(obs)){obs <- factor(obs)}
+  lev        <- levels(obs)
+  data_logit <- data.frame(obs = factor(obs), pred = pred)
+  data_roc   <- roc(obs,pred)
+  cir        <- ci(data_roc)
+  data_spec  <- data.frame( sens    = data_roc$sensitivities ,
+                            spec    = data_roc$specificities ,
+                            thr     = data_roc$thresholds    ,
+                            youden  = data_roc$sensitivities + data_roc$specificities - 1
+                           )
+  cir <- data.frame(roc = c(cir, youden = max(data_spec$youden) )) ; rownames(cir) <-c('AUC_lower','AUC','AUC_upper','youden')
+  #-> si argument nulle alors calcul du seuil par la méthode de Youden
+  if (is.null(threshold))
+  {
+    id       <- which.max(data_spec$youden) ; data_spec[id,] ;   
+    best_thr <- data_spec[id,3]
+  }else{best_thr <- threshold}
+  #-> binarisation
+  if(direction == 0){dir_name <- lev[1] ; ndir_name <- lev[2] }else{dir_name = lev[2] ; ndir_name <- lev[1]}
+  fac_roc    <- rep(dir_name,nrow(data_logit))
+  id         <- which(pred >= best_thr) ; fac_roc[id] <- ndir_name ; fac_roc <- factor(fac_roc)
+  conf_mat_1 <- confusionMatrix(fac_roc, obs)
+  result     <- data.frame(Confusion = c(                 conf_mat_1$overall[1],
+                                                          conf_mat_1$overall[3], 
+                                                          conf_mat_1$overall[4], 
+                                                          conf_mat_1$byClass[1],
+                                                          conf_mat_1$byClass[2],
+                                                          conf_mat_1$byClass[3],
+                                                          conf_mat_1$byClass[4],
+                                                          conf_mat_1$byClass[7],
+                                                          Threshold  = best_thr
+                                          ) 
+                         )
+  all_result <- list( result = result, Confusion = conf_mat_1$table, roc = cir)
+  #--> graphique
+  if(graph)
+    {  data_gr    <- melt(data_spec, id.vars = 'thr') 
+       gr         <- ggplot(data = data_gr) + geom_line(aes(x = thr, y = value, color = variable )) + 
+       ylab('Probability') + xlab('threshold') + theme(legend.title = element_blank()) + geom_vline( xintercept = best_thr, color = '#0066CC')
+      #--> courbe roc
+      plot.roc(data_roc, print.auc=TRUE, print.thres=TRUE,col="#0066CC")
+      all_result[['graph']] <- gr
+  }  
+      return( all_result)
+}
+```
+
+
+#### <FONT color='#99CCFF'> 3 Foret Aleatoire avec randomForest</FONT>
+
+```{r}
+set.seed(457867)
+#--> Données de déploiement
+id_dep   <- createDataPartition(1:nrow(df1), p = 0.15, list = F)
+XY_dep   <- df1[id_dep, ]   ; X_dep <- df1[  id_dep, 1:11] ; Y_dep <- df1[  id_dep,12]
+#--> Données en entrainement et en test
+XY        <- df1[- id_dep, ] ; X     <- df1[- id_dep, 1:11] ; Y    <- df1[- id_dep,12]
+id_test   <- createDataPartition(1:nrow(XY), p = 0.3, list = F)
+XY_test   <- XY[  id_test, ] ; X_test  <- XY[  id_test, 1:11] ; Y_test  <- XY[  id_test,12]
+XY_train  <- XY[- id_test, ] ; X_train <- XY[- id_test, 1:11] ; Y_train <- XY[- id_test,12]
+```
+
+```{r}
+set.seed(547213)
+n_tree = 1000
+
+rf1 <- randomForest(HeartDisease~., data = XY_train           , 
+                    ntree       = n_tree                      ,
+                    mtry        = floor(sqrt(ncol(X_train)))  ,
+                    nodesize    = 1                           ,
+                    replace     = T                           ,
+                    importance  = T                           ,
+                    keep.forest = T                           ,
+                    proximity   = T                           ,
+                    na.action   = na.omit                     ,
+                    xtest       = X_test                      ,
+                    ytest       = Y_test                      ,
+                   )
+```
+
+#### <FONT color='#99CCFF'> 4 Les aides graphiques</FONT>
+
+#### <FONT color='#99CCFF'> 5 Selection des variables</FONT>
+
+
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
