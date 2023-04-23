@@ -1,0 +1,284 @@
+---
+title: "<FONT color='#6699CC'><FONT size = 4 ><DIV align= center> BIO_4303 : TP4 Foret aleatoire </DIV></FONT></FONT>"
+output:
+    html_document:
+       theme:   readable  # , , flatly, , , spacelab, united, cosmo, lumen, paper, sandstone, simplex,  yeti default cerulean journal    darkl
+       toc: yes
+       toc_depth: 6
+       toc_float: true
+runtime: 
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{=html}
+<style type="text/css">
+body, td {font-size: 17px;}
+code.r{font-size: 5px;}
+pre { font-size: 15px;}
+</style>
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+
+#### <FONT color='#99CCFF'> 1 Introduction</FONT>
+
+1.1 Objectifs
+
+L’objectif de ce TD est d’apprendre à réaliser une prédiction avec la méthode des forêts aléatoires en utilisant les packages (i) randomForest (forêts aléatoires) et (ii)
+randomForestExplainer ( graphiques)
+
+Le jeu de données utilisé est *heart.csv*.
+
+Concernant la qualité de l’ajustement, nous utiliserons la fonction locale que nous avons décrite dans le TD sur la régression logistique multiple.
+
+1.2 Rappels
+Les méthodes classiques de classification et régression par arbre (CART, C4.5) présentent une grande facilité d’utilisation avec peu de travail préliminaire sur les jeux de données ( transformation des variables par exemple) car ils peuvent traiter à la fois des variables qualitatives et quantitatives (cf. cours arbres). En revenche, ils présentent une instabilité aux données de fait de leur structure hiérarchique : Un changement mineur dans les données peut induire une modification de la structure de l’arbre et par conséquent une modification de la prédiction surtout si cette modification affecte les premiers noeuds de l’arbre.
+
+En agrégeant des arbres de décisions, les forêts aléatoires permettent de remédier à ce problème. Ils augmentent en conséquence la robustesse en conservant tous les avantages des arbres. Le prix à payer est la lisibilité et l’interprétation des arbres.
+
+Les forêts aléatoires permettent d’atteindre un pouvoir discriminant parmi les plus élevés de toutes les méthodes prédictives sans sur apprentissage qui se traduit par une meilleure généralisation tout en restant assez simple à paramètrer.
+
+#### <FONT color='#99CCFF'> 2 Environnement</FONT>
+
+Pour réaliser notre objectif qui est d'apprendre à réaliser une prédiction avec la méthode des forêts aléatoires, nous utiliserons les packages :
+* 'ggplot2'
+* 'caret'
+* 'pROC'
+* 'reshape2'
+* 'kableExtra'
+* 'randomForest'
+* 'randomForestExplainer'
+* 'colorRamps'
+
+```{r, include=FALSE}
+rm(list = ls())
+LoadPack <- function(Packrequired)
+{
+  for(i in 1:length(Packrequired))
+  {
+    if(require(Packrequired[i], character.only = TRUE) == FALSE){install.packages(Packrequired[i])}
+    library(Packrequired[i],character.only = TRUE)
+  }
+}
+pack <- c('ggplot2','caret', 'pROC','reshape2', 'kableExtra','randomForest','randomForestExplainer', 'colorRamps' )
+#-> chargement des packages
+LoadPack(pack)
+#-> Chargement des données
+df1 <- read.table('heart.csv', header = T, sep = ',', dec = '.')
+#-> Ne pas oublier de transformer la variable à prédire en variable factorielle
+df1$HeartDisease = factor(df1$HeartDisease )
+head(df1,10) %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+```
+
+```{r}
+Valid_ROC <- function(obs, pred, direction = 0, threshold  = NULL, graph = T)
+{
+  require(pROC)
+  require(caret)
+  if(!is.factor(obs)){obs <- factor(obs)} # si obs n'est pas un facteur alors obs est convertit avec factor
+  lev        <- levels(obs)
+  data_logit <- data.frame(obs = factor(obs), pred = pred) # création d'un dataframe qui contient 2 colonnes obs et pred les obs (observations réelles) et les preds(prédictions du modèle)
+  data_roc   <- roc(obs,pred)  # On calcul la courbes roc avec obs et pred
+  cir        <- ci(data_roc)  # ci Calcul les intervalles de confiance de l'AUC de la courbe roc
+  
+  # data_spec  contient les sensibilités, spécificités, seuils et l'indice Youden(sensibilité + spécificité - 1)
+  data_spec  <- data.frame( sens    = data_roc$sensitivities ,
+                            spec    = data_roc$specificities ,
+                            thr     = data_roc$thresholds    ,
+                            youden  = data_roc$sensitivities + data_roc$specificities - 1
+                           )
+  
+  cir <- data.frame(roc = c(cir, youden = max(data_spec$youden) )) ; rownames(cir) <-c('AUC_lower','AUC','AUC_upper','youden')
+  #-> si argument nulle alors calcul du seuil par la méthode de Youden
+  if (is.null(threshold))
+  {
+    id       <- which.max(data_spec$youden) ; data_spec[id,] ;   
+    best_thr <- data_spec[id,3]
+  }else{best_thr <- threshold}
+  #-> binarisation
+  if(direction == 0){dir_name <- lev[1] ; ndir_name <- lev[2] }else{dir_name = lev[2] ; ndir_name <- lev[1]}
+  fac_roc    <- rep(dir_name,nrow(data_logit))
+  id         <- which(pred >= best_thr) ; fac_roc[id] <- ndir_name ; fac_roc <- factor(fac_roc)
+  conf_mat_1 <- confusionMatrix(fac_roc, obs)
+  result     <- data.frame(Confusion = c(                 conf_mat_1$overall[1],
+                                                          conf_mat_1$overall[3], 
+                                                          conf_mat_1$overall[4], 
+                                                          conf_mat_1$byClass[1],
+                                                          conf_mat_1$byClass[2],
+                                                          conf_mat_1$byClass[3],
+                                                          conf_mat_1$byClass[4],
+                                                          conf_mat_1$byClass[7],
+                                                          Threshold  = best_thr
+                                          ) 
+                         )
+  all_result <- list( result = result, Confusion = conf_mat_1$table, roc = cir)
+  #--> graphique
+  if(graph)
+    {  data_gr    <- melt(data_spec, id.vars = 'thr') 
+       gr         <- ggplot(data = data_gr) + geom_line(aes(x = thr, y = value, color = variable )) + 
+       ylab('Probability') + xlab('threshold') + theme(legend.title = element_blank()) + geom_vline( xintercept = best_thr, color = '#0066CC')
+      #--> courbe roc
+      plot.roc(data_roc, print.auc=TRUE, print.thres=TRUE,col="#0066CC")
+      all_result[['graph']] <- gr
+  }  
+      return( all_result)
+}
+```
+
+
+#### <FONT color='#99CCFF'> 3 Foret Aleatoire avec randomForest</FONT>
+
+```{r}
+set.seed(457867)
+#--> Données de déploiement
+id_dep   <- createDataPartition(1:nrow(df1), p = 0.15, list = F)
+XY_dep   <- df1[id_dep, ]   ; X_dep <- df1[  id_dep, 1:11] ; Y_dep <- df1[  id_dep,12]
+#--> Données en entrainement et en test
+XY        <- df1[- id_dep, ] ; X     <- df1[- id_dep, 1:11] ; Y    <- df1[- id_dep,12]
+id_test   <- createDataPartition(1:nrow(XY), p = 0.3, list = F)
+XY_test   <- XY[  id_test, ] ; X_test  <- XY[  id_test, 1:11] ; Y_test  <- XY[  id_test,12]
+XY_train  <- XY[- id_test, ] ; X_train <- XY[- id_test, 1:11] ; Y_train <- XY[- id_test,12]
+```
+
+```{r}
+set.seed(547213)
+n_tree = 1000
+rf1 <- randomForest(HeartDisease~., data = XY_train           , 
+                    ntree       = n_tree                      ,
+                    mtry        = floor(sqrt(ncol(X_train)))  ,
+                    nodesize    = 1                           ,
+                    replace     = T                           ,
+                    importance  = T                           ,
+                    keep.forest = T                           ,
+                    proximity   = T                           ,
+                    na.action   = na.omit                     ,
+                    xtest       = X_test                      ,
+                    ytest       = Y_test                      ,
+                   )
+```
+
+##### <FONT color='#99CCFF'> 3.1 Résultats </FONT>
+
+Erreur out of bag
+
+La fonction retourne une liste contenant différents résultats. Ils concernent d’une part, ceux obtenus sur les données d’entraînement (XY_train) et d’autre part, ceux obtenus sur le jeu de données test (X_test, Y_test). 
+
+Les résultats importants à analyser :
+
+Identification des OOB : Il est possible de savoir, pour chaque individu, le nombre d’arbre pour lequel il est OOB. les valeurs sont stockées dans la variable oob.time. Les 10 premières valeurs sont les suivantes:
+```{r}
+idx <- 1:nrow(XY_train)
+oob.time <- data.frame(Ind = paste0("ind_",idx)  ,OBB= rf1$oob.times)
+head(oob.time)
+```
+* Taux d’erreur en entrainement et en validation. Les matrices err.rate et test$err.rate contiennent :
+  + 1000 lignes, c.a.d le nombre d’arbres à agréger (défini par ntrees). Chaque ligne correspond donc au taux d’erreur de classement des individus par agrégation successive des arbres
+  + La première colonne contient le taux d’erreur OOB Total, la deuxième colonne contient le taux d’erreur sur la première classe de Y (= 0) et la troisième colonne, le taux d’erreur sur la seconde classe de Y (= 1). Le tableau suivant fournit     les résultats (10 premiers arbres) des erreurs en entrainement
+
+```{r}
+tx_erreur_train <- rf1$err.rate
+tx_erreur_test <- rf1$test$err.rate
+head(tx_erreur_train)
+```
+On peut donc suivre à l’aide d’un graphique l’évolution des taux d’erreurs totaux en OOB sur le jeux d’entrainement (XY_train) mais aussi et surtout sur le jeux de données de test (X_test,Y_test). la comparaison des taux (entrainement et test) permettent de voir la qualité de l’ajustement et éventuellement modifier la paramétrage si besoin.
+
+```{r, include=TRUE}
+OBB_train <- tx_erreur_train[,1]
+Test <- tx_erreur_test[,1]
+ntree <- 1:n_tree
+tab_visualisation <- data.frame(OBB_train,Test)
+ggplot(tab_visualisation, aes(x = ntree)) + geom_line(aes(y= OBB_train), color = "#FF7762") + geom_line(aes(y=Test), color ="#00FFD1") + xlab("nTree") + ylab("value") + theme(legend.position = "right")
+
+```
+
+##### <FONT color='#99CCFF'> 3.2 Qualité des Résultats </FONT>
+
+On peut calculer les courbes ROC en test à laide de la fonction Valid_Roc. Les résultats sont les suivants :
+
+```{r}
+head(rf1$test$votes,10)
+```
+
+* Courbe ROC
+
+```{r}
+resultat <- Valid_ROC(as.numeric(XY_test$HeartDisease)-1,as.numeric(rf1$test$votes[,1]), graph = T)
+```
+```{r}
+resultat$roc
+```
+
+
+* Evolution des spécificités, sensibilités et seuillage
+
+```{r}
+resultat$graph
+```
+* Matrice des confusions avec seuillage définie par l’index de Youden
+```{r}
+resultat$result
+resultat$Confusion
+```
+
+
+##### <FONT color='#99CCFF'> 3.4 Prédiction - déploiement </FONT>
+
+Nous utilisons maintenant le jeux de données de déploiement (partition 2) pour vérifier la qualité de la prédiction
+
+```{r}
+pred_dep <- predict(rf1, X_dep, type = 'prob')
+head(pred_dep ,10) %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+```
+
+```{r}
+resultat_pred <- Valid_ROC(as.numeric(XY_dep$HeartDisease)-1,as.numeric(pred_dep[,1]), graph = T)
+```
+```{r}
+resultat_pred$roc
+```
+
+* Evolution des spécificités, sensibilités et seuillage
+
+```{r}
+resultat_pred$graph
+```
+* Matrice des confusions avec seuillage définie par l’index de Youden
+
+```{r}
+resultat_pred$result
+```
+```{r}
+resultat_pred$Confusion
+```
+
+#### <FONT color='#99CCFF'> 4 Les aides graphiques</FONT>
+
+##### <FONT color='#99CCFF'> 4.1 Graphique de proximité </FONT>
+
+Une fonctionnalité intéressante est l’affichage des proximités issus de la prédiction réalisée par l’algorithme. Ce graphique est représenté en deux dimensions (obtenus par diminution de dimensionalité - méthode MDS). Chaque individu est représenté par un point du graphique de sorte que la ‘distance’ entre deux individus soit la plus proche possible. Ce graphique permet de repérer d’éventuels individus atypique et les regroupements d’individus par classe. Pour obtenir le graphique, il est nécessaire d’ajouter l’option proximity = T
+
+```{r}
+cmdscale(resultat_pred$result)
+```
+
+
+#### <FONT color='#99CCFF'> 5 Selection des variables</FONT>
+
+
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
