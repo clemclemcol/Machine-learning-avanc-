@@ -82,15 +82,17 @@ head(new_df) %>% kbl() %>%  kable_styling( position = "center", full_width = FAL
 ```{r}
 #-> recherche automatique de l'identifiant de la variable à prédire 
 pred_name <- 'event' 
-id_pred   <- which(names(dfw) %in% pred_name)   
+id_pred   <- which(names(new_df) %in% pred_name)   
 #-> on renomme de dataframe
-XY        <- dfw 
+XY        <- new_df 
+X <- XY[1:6]
+Y <- XY[7:12]
 #-> construction du modèle
 #full_form  <- as.formula(paste0(names(dfw)[id_pred], ' ~ ',paste0(names(dfw)[-id_pred], collapse = ' + ')))
 #-> rmq : on aurait pu aussi utiolser une formule bcp plus simple ( mais moins lisible)
 # ..... ful_form <- as.formula('event ~.')
 #-> on appelle la règression logistique (qui est un modèle linéaire général)
-full_model <- glm(event ~., family=binomial(link=logit), data = dfw)
+full_model <- glm(event ~., family=binomial(link=logit), data = new_df)
 ```
 ```{r}
 summary(full_model)
@@ -117,6 +119,7 @@ head(confint.default(full_model) )  %>% kbl(booktabs = TRUE) %>% kable_styling( 
 ```
 
 ##### <FONT color='#000033'> 2.3. Performance du classifieur</FONT>
+
 ##### <FONT color='#000033'> 2.4. Courbe Sen Spe vs seuil</FONT>
 ###### <FONT color='#000033'> 2.4.1 Script</FONT>
 ```{r}
@@ -169,7 +172,8 @@ Valid_ROC <- function(obs, pred, direction = 0, threshold  = NULL, graph = T)
   }  
       return( all_result)
 }
-result <- Valid_ROC(XY$event, full_model$fitted.values, graph = F)
+result <- Valid_ROC(XY$event, full_model$fitted.values, graph = T)
+result
 ```
 ###### <FONT color='#000033'> 2.4.2 Résultats</FONT>
 
@@ -215,6 +219,8 @@ result_forward <- Valid_ROC(XY$event, forward_model$fitted.values, graph = F)
 roc1 <- plot.roc(factor(XY$event),forward_model$fitted.values, percent = T, col = '#CC3300')
 roc2 <- lines.roc(factor(XY$event),full_model$fitted.values, percent=T, col="#0066CC",  print.thres=TRUE)
 legend("bottomright", legend=c("ascend_model", "full_model"), col=c('#CC3300', "#0066CC"), lwd=2)
+
+result_forward$result
 ```
 
 
@@ -225,7 +231,81 @@ legend("bottomright", legend=c("ascend_model", "full_model"), col=c('#CC3300', "
 
 #### <FONT color='#99CCFF'> 4 Validation croisée</FONT>
 ##### <FONT color='#000033'> 4.1. Les objectifs</FONT>
+
+
+
 ###### <FONT color='#000033'> 4.1.1 Les résultats</FONT>
+```{r}
+XY
+X <- XY[1:12]
+Y <- XY$event
+
+empty_form    <- as.formula(paste0(names(XY)[id_pred] ,'~1'))
+XY_bis <- data.frame(XY[7], XY[3], XY[5], XY[1], XY[6])
+full_form     <- as.formula(paste0(names(XY)[id_pred], ' ~ ', paste0(names(XY_bis), collapse = ' + ')))
+full_form
+
+id_fold <- createFolds(Y, k=5, TRUE) #Retourne les indices des données dans les diff folds
+id_fold
+
+#Pour chaque jeux, on réalise une régression logistique sur les données d'entrainement
+
+model <- list()
+
+for (i in 1 : length(id_fold)){
+
+  XY_train <- XY[id_fold[[i]],] 
+  XY_test  <- XY[-id_fold[[i]],]
+
+  full_model  <- glm(full_form, family=binomial(link=logit), data = XY_train)
+
+  pred <- predict(full_model, newdata = XY_train, type = 'response')
+
+  model[[i]] <- Valid_ROC(Y[id_fold[[i]]], pred, threshold = NULL, graph = T)
+
+}
+model 
+
+resultat_roc <- NULL
+for (i in 1 : length(id_fold)){
+
+  resultat_roc <- cbind(resultat_roc, as.matrix(model[[i]]$roc))
+
+}
+resultat_roc <- as.data.frame(resultat_roc)
+names(resultat_roc) <- paste("kfold",seq(1,length(id_fold)), sep = '')
+resultat_roc
+
+
+resultat_res <- NULL
+for (i in 1 : length(id_fold)){
+
+  resultat_res <- cbind(resultat_res, as.matrix(model[[i]]$result))
+
+}
+resultat_res <- as.data.frame(resultat_res)
+names(resultat_res) <- paste("kfold",seq(1,length(id_fold)), sep = '')
+resultat_res
+
+mean_roc <- apply(resultat_roc, MARGIN = 1, FUN = mean)
+mean_roc
+
+sd_roc <- apply(resultat_roc, MARGIN = 1, FUN = sd)
+sd_roc
+
+result_roc <- cbind(mean_roc,sd_roc)
+result_roc
+
+
+
+mean_res <- apply(resultat_res, MARGIN = 1, FUN = mean)
+mean_res
+
+sd_res <- apply(resultat_res, MARGIN = 1, FUN = sd)
+sd_res
+
+result_res <- cbind(mean_res,sd_res)
+```
 ###### <FONT color='#000033'> 4.1.2 Conclusion</FONT>
 
 
