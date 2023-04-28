@@ -70,7 +70,7 @@ LoadPack <- function(Packrequired)
     library(Packrequired[i],character.only = TRUE)
   }
 }
-pack <- c('ggplot2','caret', 'pROC','reshape2', 'kableExtra','randomForest','randomForestExplainer', 'colorRamps' )
+pack <- c('dplyr','ggplot2','caret', 'pROC','reshape2', 'kableExtra','randomForest','randomForestExplainer', 'colorRamps', 'MASS' )
 #-> chargement des packages
 LoadPack(pack)
 #-> Chargement des données
@@ -267,7 +267,7 @@ resultat_pred$Confusion
 Une fonctionnalité intéressante est l’affichage des proximités issus de la prédiction réalisée par l’algorithme. Ce graphique est représenté en deux dimensions (obtenus par diminution de dimensionalité - méthode MDS). Chaque individu est représenté par un point du graphique de sorte que la ‘distance’ entre deux individus soit la plus proche possible. Ce graphique permet de repérer d’éventuels individus atypique et les regroupements d’individus par classe. Pour obtenir le graphique, il est nécessaire d’ajouter l’option proximity = T
 
 ```{r}
-cmdscale(resultat_pred$result)
+cmdscale(resultat_pred)
 ```
 
 
@@ -292,6 +292,70 @@ plot_min_depth_interactions(interactions_frame)
 
 #### <FONT color='#99CCFF'> 5 Selection des variables</FONT>
 
+```{r}
+df2 <- read.table('heart.csv', header = T, sep = ',', dec = '.')
+df2$HeartDisease = factor(df2$HeartDisease )
+
+df2 <- data.frame(df2[,-c(2,4,6)])
+
+set.seed(457867)
+#--> Données de déploiement
+id_dep2   <- createDataPartition(1:nrow(df2), p = 0.15, list = F)
+XY_dep2   <- df2[id_dep2, ]   ; X_dep2 <- df2[  id_dep2, 1:8] ; Y_dep2 <- df2[  id_dep2,9]
+#--> Données en entrainement et en test
+XY2        <- df2[- id_dep2, ] ; X     <- df2[- id_dep2, 1:8] ; Y    <- df2[- id_dep2,9]
+id_test2   <- createDataPartition(1:nrow(XY2), p = 0.3, list = F)
+XY_test2   <- XY2[  id_test2, ] ; X_test2  <- XY2[  id_test2, 1:8] ; Y_test2  <- XY2[  id_test2,9]
+XY_train2  <- XY2[- id_test2, ] ; X_train2 <- XY2[- id_test2, 1:8] ; Y_train2 <- XY2[- id_test2,9]
+
+set.seed(547213)
+n_tree2 = 1000
+
+rf2 <- randomForest(HeartDisease~., data = XY_train2           , 
+                    ntree       = n_tree2                      ,
+                    mtry        = floor(sqrt(ncol(X_train)))  ,
+                    nodesize    = 1                           ,
+                    replace     = T                           ,
+                    importance  = T                           ,
+                    keep.forest = T                           ,
+                    proximity   = T                           ,
+                    na.action   = na.omit                     ,
+                    xtest       = X_test2                      ,
+                    ytest       = Y_test2                      ,
+                   )
+
+idx2 <- 1:nrow(XY_train2)
+oob.time2 <- data.frame(Ind = paste0("ind_",idx)  ,OBB= rf2$oob.times)
+head(oob.time2)
+
+tx_erreur_train2 <- rf2$err.rate
+tx_erreur_test2 <- rf2$test$err.rate
+head(tx_erreur_train2)
+
+OBB_train2 <- tx_erreur_train2[,1]
+Test2 <- tx_erreur_test2[,1]
+ntree2 <- 1:n_tree2
+tab_visualisation2 <- data.frame(OBB_train2,Test2)
+ggplot(tab_visualisation2, aes(x = ntree2)) + geom_line(aes(y= OBB_train2), color = "#FF7762") + geom_line(aes(y=Test2), color ="#00FFD1") + xlab("nTree") + ylab("value") + theme(legend.position = "right")
+
+
+head(rf2$test$votes,10)
+
+resultat2 <- Valid_ROC(as.numeric(XY_test2$HeartDisease)-1,as.numeric(rf2$test$votes[,1]), graph = T)
+resultat2
+
+#cmdscale(resultat_pred2$result)
+
+#md_frame2 <- min_depth_distribution(rf2)
+#plot_min_depth_distribution(md_frame2, mean_sample = "top_trees") # default mean_sample arg 
+
+varImpPlot(rf2)
+importance(rf2)
+cmdsplot(rf2)
+
+interactions_frame2<- min_depth_interactions(rf2, rf2$importance)
+plot_min_depth_interactions(interactions_frame2)
+```
 
 
 </FONT></FONT>
