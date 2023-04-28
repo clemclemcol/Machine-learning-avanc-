@@ -31,7 +31,35 @@ knitr::opts_chunk$set(echo = TRUE)
 
 #### <FONT color='#99CCFF'> 1 Introduction</FONT>
 
+1.1 Objectifs
+
+L’objectif de ce TD est d’apprendre à réaliser une prédiction avec la méthode des forêts aléatoires en utilisant les packages (i) randomForest (forêts aléatoires) et (ii)
+randomForestExplainer ( graphiques)
+
+Le jeu de données utilisé est *heart.csv*.
+
+Concernant la qualité de l’ajustement, nous utiliserons la fonction locale que nous avons décrite dans le TD sur la régression logistique multiple.
+
+1.2 Rappels
+Les méthodes classiques de classification et régression par arbre (CART, C4.5) présentent une grande facilité d’utilisation avec peu de travail préliminaire sur les jeux de données ( transformation des variables par exemple) car ils peuvent traiter à la fois des variables qualitatives et quantitatives (cf. cours arbres). En revenche, ils présentent une instabilité aux données de fait de leur structure hiérarchique : Un changement mineur dans les données peut induire une modification de la structure de l’arbre et par conséquent une modification de la prédiction surtout si cette modification affecte les premiers noeuds de l’arbre.
+
+En agrégeant des arbres de décisions, les forêts aléatoires permettent de remédier à ce problème. Ils augmentent en conséquence la robustesse en conservant tous les avantages des arbres. Le prix à payer est la lisibilité et l’interprétation des arbres.
+
+Les forêts aléatoires permettent d’atteindre un pouvoir discriminant parmi les plus élevés de toutes les méthodes prédictives sans sur apprentissage qui se traduit par une meilleure généralisation tout en restant assez simple à paramètrer.
+
+
 #### <FONT color='#99CCFF'> 2 Environnement</FONT>
+
+Pour réaliser notre objectif qui est d'apprendre à réaliser une prédiction avec la méthode des forêts aléatoires, nous utiliserons les packages :
+* 'ggplot2'
+* 'caret'
+* 'pROC'
+* 'reshape2'
+* 'kableExtra'
+* 'randomForest'
+* 'randomForestExplainer'
+* 'colorRamps'
+
 ```{r}
 rm(list = ls())
 LoadPack <- function(Packrequired)
@@ -139,7 +167,128 @@ rf1 <- randomForest(HeartDisease~., data = XY_train           ,
                    )
 ```
 
+##### <FONT color='#99CCFF'> 3.1 Résultats </FONT>
+
+Erreur out of bag
+
+La fonction retourne une liste contenant différents résultats. Ils concernent d’une part, ceux obtenus sur les données d’entraînement (XY_train) et d’autre part, ceux obtenus sur le jeu de données test (X_test, Y_test). 
+
+Les résultats importants à analyser :
+
+Identification des OOB : Il est possible de savoir, pour chaque individu, le nombre d’arbre pour lequel il est OOB. les valeurs sont stockées dans la variable oob.time. Les 10 premières valeurs sont les suivantes:
+```{r}
+idx <- 1:nrow(XY_train)
+oob.time <- data.frame(Ind = paste0("ind_",idx)  ,OBB= rf1$oob.times)
+head(oob.time)
+```
+* Taux d’erreur en entrainement et en validation. Les matrices err.rate et test$err.rate contiennent :
+  + 1000 lignes, c.a.d le nombre d’arbres à agréger (défini par ntrees). Chaque ligne correspond donc au taux d’erreur de classement des individus par agrégation successive des arbres
+  + La première colonne contient le taux d’erreur OOB Total, la deuxième colonne contient le taux d’erreur sur la première classe de Y (= 0) et la troisième colonne, le taux d’erreur sur la seconde classe de Y (= 1). Le tableau suivant fournit     les résultats (10 premiers arbres) des erreurs en entrainement
+
+```{r}
+tx_erreur_train <- rf1$err.rate
+tx_erreur_test <- rf1$test$err.rate
+head(tx_erreur_train)
+```
+On peut donc suivre à l’aide d’un graphique l’évolution des taux d’erreurs totaux en OOB sur le jeux d’entrainement (XY_train) mais aussi et surtout sur le jeux de données de test (X_test,Y_test). la comparaison des taux (entrainement et test) permettent de voir la qualité de l’ajustement et éventuellement modifier la paramétrage si besoin.
+
+```{r, include=TRUE}
+OBB_train <- tx_erreur_train[,1]
+Test <- tx_erreur_test[,1]
+ntree <- 1:n_tree
+tab_visualisation <- data.frame(OBB_train,Test)
+ggplot(tab_visualisation, aes(x = ntree)) + geom_line(aes(y= OBB_train), color = "#FF7762") + geom_line(aes(y=Test), color ="#00FFD1") + xlab("nTree") + ylab("value") + theme(legend.position = "right")
+```
+
+##### <FONT color='#99CCFF'> 3.2 Qualité des Résultats </FONT>
+
+On peut calculer les courbes ROC en test à laide de la fonction Valid_Roc. Les résultats sont les suivants :
+
+```{r}
+head(rf1$test$votes,10)
+```
+
+* Courbe ROC
+
+```{r}
+resultat <- Valid_ROC(as.numeric(XY_test$HeartDisease)-1,as.numeric(rf1$test$votes[,1]), graph = T)
+```
+```{r}
+resultat$roc
+```
+
+
+* Evolution des spécificités, sensibilités et seuillage
+
+```{r}
+resultat$graph
+```
+* Matrice des confusions avec seuillage définie par l’index de Youden
+```{r}
+resultat$result
+resultat$Confusion
+```
+
+
+##### <FONT color='#99CCFF'> 3.4 Prédiction - déploiement </FONT>
+
+Nous utilisons maintenant le jeux de données de déploiement (partition 2) pour vérifier la qualité de la prédiction
+
+```{r}
+pred_dep <- predict(rf1, X_dep, type = 'prob')
+head(pred_dep ,10) %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+```
+
+```{r}
+resultat_pred <- Valid_ROC(as.numeric(XY_dep$HeartDisease)-1,as.numeric(pred_dep[,1]), graph = T)
+```
+```{r}
+resultat_pred$roc
+```
+
+* Evolution des spécificités, sensibilités et seuillage
+
+```{r}
+resultat_pred$graph
+```
+* Matrice des confusions avec seuillage définie par l’index de Youden
+
+```{r}
+resultat_pred$result
+```
+```{r}
+resultat_pred$Confusion
+```
+
 #### <FONT color='#99CCFF'> 4 Les aides graphiques</FONT>
+
+##### <FONT color='#99CCFF'> 4.1 Graphique de proximité </FONT>
+
+Une fonctionnalité intéressante est l’affichage des proximités issus de la prédiction réalisée par l’algorithme. Ce graphique est représenté en deux dimensions (obtenus par diminution de dimensionalité - méthode MDS). Chaque individu est représenté par un point du graphique de sorte que la ‘distance’ entre deux individus soit la plus proche possible. Ce graphique permet de repérer d’éventuels individus atypique et les regroupements d’individus par classe. Pour obtenir le graphique, il est nécessaire d’ajouter l’option proximity = T
+
+```{r}
+cmdscale(resultat_pred$result)
+```
+
+
+##### <FONT color='#99CCFF'> 4.2 Importance des variables </FONT>
+
+```{r}
+md_frame <- min_depth_distribution(rf1)
+plot_min_depth_distribution(md_frame, mean_sample = "top_trees") # default mean_sample arg 
+```
+
+```{r}
+varImpPlot(rf1)
+importance(rf1)
+MDSplot(rf1, resultat_pred$result)
+```
+```{r}
+#vars<- important_variables(rf1, k = 6, measures = c("times_a_root", "no_of_nodes"))
+interactions_frame<- min_depth_interactions(rf1, rf1$importance)
+plot_min_depth_interactions(interactions_frame)
+```
+
 
 #### <FONT color='#99CCFF'> 5 Selection des variables</FONT>
 
