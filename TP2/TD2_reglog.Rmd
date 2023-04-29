@@ -1,0 +1,539 @@
+---
+title: "<FONT color='#000000'><FONT size = 4 ><DIV> TP2 </DIV></FONT></FONT>"
+output:
+  html_document:
+    highlight: textmate 
+    theme:   readable  
+    toc: yes
+    toc_depth: 6
+    toc_float: true
+---
+```{=html}
+<style type="text/css">
+  body, td {font-size: 17px;}
+code.r{font-size: 3px;}
+pre { font-size: 15px;}
+</style>
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F)
+```
+
+<FONT color=' #000000'><FONT size = 4 >
+  
+::: {align="center"}
+La Régression Logistique
+:::
+  
+</FONT></FONT>
+  
+<FONT color='#0099CC'><FONT size = 4 >
+  
+::: {align="center"}
+Guilherme & Clémence : Esiee Paris 2022-2023
+:::
+  
+</FONT></FONT>
+
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+#### <FONT color='#001279'> 1 Introduction</FONT>
+
+L'objectif du TD est de réaliser une régression logistique multivariée et de mettre en place différentes étapes pour évaluer la pertinence des variables et sélectionner celles qui sont pertinentes.
+Les différentes étapes sont :
+ * Réaliser une régression logistique sur un modèle plein (avec toutes les variables)
+ * Utiliser le test de Wald sur une ou plusieurs variables pour évaluer leur pertinence au sein du modèle
+ * Réaliser et interpréter une courbe ROC afin de déterminer un seuil optimal.
+ * Réaliser une régression logistique progressive afin de sélectionner les variables pertinentes
+ * Réaliser sur les variables sélectionnées à partir de la régression ascendente, une régression logistique en validation croisée qui nous permettra, sur l’ensemble des jeux tests, d’estimer un seuil moyen “optimal”.
+
+##### <FONT color='#000033'> 1.1. Les librairies</FONT>
+ 
+```{r cars, include=FALSE}
+rm(list = ls())
+
+LoadPack <- function(Packrequired)
+{
+  for(i in 1:length(Packrequired))
+  {
+    if(require(Packrequired[i], character.only = TRUE) == FALSE){install.packages(Packrequired[i])}
+    library(Packrequired[i],character.only = TRUE)
+  }
+  print('Package ... DONE')
+}
+
+pack <- c('ggplot2','caret', 'readr','pROC','reshape2', 'MASS', 'aod', 'kableExtra' )
+
+#-> chargement des packages
+LoadPack(pack)
+```
+ * Les librairies nécessaires sont : ggplot2, caret, readr, pROC, reshape2, MASS, aod et kableExtra.
+
+##### <FONT color='#000033'> 1.2. Les données </FONT>
+```{r}
+dfw <- read.csv("Hearh_clinical_records_dataset.csv")
+
+#Formatage des données
+names(dfw)[c(3,5,6,8,9,13)] <- c('cpk','frac', 'hbp', 'creat', 'Na','event')
+
+dfw$age <- round(dfw$age,digits = 0)
+dfw$sex <- factor(dfw$sex, levels = c(0,1), labels = c('F','H'))
+dfw$smoking <- factor(dfw$smoking, levels = c(0,1), labels = c('Non','Oui'))
+dfw$diabetes <- factor(dfw$diabetes, levels = c(0,1), labels = c('Non','Oui'))
+dfw$hbp <- factor(dfw$hbp, levels = c(0,1), labels = c('Non','Oui'))
+dfw$event <- factor(dfw$event, levels = c(0,1), labels = c('dcd','vv'))
+dfw$anaemia <- factor(dfw$anaemia, levels = c(0,1), labels = c('Non', 'Oui'))
+
+new_df <- data.frame(dfw[1], dfw$cpk, dfw$frac, dfw$platelets, dfw$creat, dfw$Na, dfw$time, dfw$anaemia, dfw$diabetes, dfw$hbp, dfw$smoking, dfw$sex, dfw$event)
+names(new_df) <- c("age", "cpk", "frac", "platelets", "creat", "Na", "time", "anaemia", "diabetes", "hbp", "smoking", "sex", "event")
+head(new_df) %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+```
+
+</FONT></FONT>
+<hr style="border: 1px  solid gray">
+</hr>
+
+On commence par identifier la variable à prédire "event" dans le dataframe "new_df" et le stocke dans la variable "id_pred".
+
+#### <FONT color='#001279'> 2 Regression logistique multivariée</FONT>
+```{r}
+#-> recherche automatique de l'identifiant de la variable à prédire 
+pred_name <- 'event' 
+id_pred   <- which(names(new_df) %in% pred_name)   
+#-> on renomme de dataframe
+XY        <- new_df 
+X <- XY[1:6]
+Y <- XY[7:12]
+#-> construction du modèle
+#full_form  <- as.formula(paste0(names(dfw)[id_pred], ' ~ ',paste0(names(dfw)[-id_pred], collapse = ' + ')))
+#-> rmq : on aurait pu aussi utiolser une formule bcp plus simple ( mais moins lisible)
+# ..... ful_form <- as.formula('event ~.')
+#-> on appelle la règression logistique (qui est un modèle linéaire général)
+full_model <- glm(event ~., family=binomial(link=logit), data = new_df)
+```
+* Ensuite, on divise le dataframe en deux sous-dataframes X et Y contenant respectivement les variables explicatives et la variable à prédire.
+
+* Le modèle de régression logistique est ensuite construit en utilisant la fonction glm() de R. Les paramètres de la fonction sont la formule de la régression logistique, la famille de la distribution (binomiale avec une fonction de lien logit) et les données. On affiche les résultats à l'aide la fonction summary.
+
+```{r}
+summary(full_model)
+```
+
+*Les résultats ci-dessus donnent les coefficients estimés pour chaque variable explicative, leur erreur standard, la valeur z, le p-value et le niveau de signification (indiqué par des astérisques).*
+
+Interprétation
+
+* La p-value est une mesure contre l'hypothèse nulle. Plus la p-value est faible, plus l'hypothèse nulle est forte. Dans ce modèle, les variables "age", "frac", "creat" et "time" sont significatives, car leur p-value est inférieure à 0,05.
+
+* L'AIC (Akaike Information Criterion) mesure de la qualité du modèle qui prend en compte la complexité du modèle et la qualité de l'ajustement. Un AIC plus faible indique un meilleur ajustement du modèle. Dans notre modèle, l'AIC est de 245,53, ce qui suggère que le modèle est relativement bien ajusté.
+
+* Les Deviance Residuals nous apportent des précisions sur la différence entre les valeurs observées et les valeurs prédites par le modèle, ajustées pour le nombre de degrés de liberté du modèle. Pour notre modèle les Deviance Residuals montrent que la distribution des résidus est symétrique et centrée sur zéro, ce qui est une bonne indication d'un ajustement correct du modèle cependant, le fait que les valeurs maximales et minimales soient assez éloignées de zéro peut suggérer que le modèle ne prédit pas correctement les cas extrêmes.
+
+##### <FONT color='#000033'> 2.1. Coefficents de régression </FONT>
+
+Les résultats qui sont présentés dans la section 2.1 montrent les coefficients de régression pour chaque variable dans le modèle. Les coefficients indiquent la variation de l'odds ratio associée à un changement d'une unité dans la variable indépendante correspondante.
+
+##### <FONT color='#000033'> 2.1.1 Inférence statistique </FONT>
+* Sous hypothèse de normalité les z scores (colonne 3) : Z=β^s/(βj) → N(0,1)
+ suivent une distribution normale.
+
+* Il est donc possible de réaliser une inférence permettant de tester, pour chaque variable, leur degrés de signification (de participation) dans le modèle . 
+
+L’inférence est la suivante :
+
+{H0:βj=0
+{H1:βj≠0
+
+* L’acceptation de H0 signifie que la variable ne participe pas de façon significative à l’estimation de y. Ce test nous fournit une première indication sur l’implication des variables dans l’estimation de la variable à expliquer. Cependant, ce test ne fournit pas de renseignements sur l’apport d’une variable par rapport aux autres dans l’estimation de la variable à expliquer. Il est donc nécessaire de réaliser un test de Wald.
+
+##### <FONT color='#000033'> 2.1.2 Intervalle de confiance</FONT>
+
+* La fonction confint.default permet de calculer les limites l’intervalle de confiance en bilatéral (95%) associé aux paramètres de la régression.
+
+```{r}
+head(confint.default(full_model) )  %>% kbl(booktabs = TRUE) %>% kable_styling( position = "center", full_width = FALSE)
+```
+On observe ci-dessus les intervalles de confiance pour chaque coefficient de régression. Ces intervalles donnent une estimation de la plage de valeurs dans laquelle le vrai coefficient se situe avec un certain niveau de confiance (ici, 95%). Par exemple, pour l'âge, l'intervalle de confiance à 95% est de [0,0165063 ; 0,0784597], ce qui signifie que l'on peut être sûr à 95% que le vrai coefficient se situe dans cet intervalle.
+
+##### <FONT color='#000033'> 2.2. Test de Wald</FONT>
+
+* Le test de Wald permet de realiser différents tests sur les coefficients des variables en prenant en compte le lien (matrice des variances covariance) entre ces dernières. A titre d’exemple nous testons s’il existe une différence entre les coefficients age et Na. Nous affectons le code 1 pour l’age et - 1 pour Na, car nous testons une différence (cette méthode est appelée méthode des constrastes):
+
+```{r}
+ t <- rbind(rep(0,13)) ; t[2] <- 1 ; t[7] <- -1
+ wald.test ( b  =  coef (full_model),  Sigma  =  vcov (full_model),  L  = t)
+```
+* Le resultat ci dessus montre une forte différence entre les coefficients age et Na
+
+* Le premier test évalue la significativité du coefficient de la variable "Na" en comparant le modèle complet (avec toutes les variables) avec un modèle réduit qui ne contient pas cette variable.
+ + La statistique du test est le chi-carré, qui suit une distribution de chi-carré avec 1 degré de liberté. Ici, la p-value est de 0,007, ce qui indique que le coefficient de "Na" est significativement différent de zéro. 
+ 
+
+```{r}
+
+ wald.test ( b  =  coef (full_model),  Sigma  =  vcov (full_model),  Terms  = c(4,7))
+```
+* si nous voulons tester la signification des coeficients age et Na dans l’estimation du modèle, on utilisera l’argument Terms.
+
+* Le deuxième test évalue la significativité conjointe des coefficients des variables "frac" et "Na" en comparant le modèle complet avec un modèle qui ne contient ni "frac" ni "Na".
+  + La statistique du test est à nouveau le chi-carré, qui suit une distribution de chi-carré avec 2 degrés de liberté. Ici, la p-value est très faible (3,7e-06), ce qui indique que l'inclusion de ces deux variables dans le modèle est statistiquement significative.
+  
+##### <FONT color='#000033'> 2.3. Performance du classifieur</FONT>
+
+* La courbe ROC permet d’évaluer les performances d’un classifieur binaire, c’est-à-dire d’un système qui a pour objectif de catégoriser des éléments en deux groupes distincts sur la base d’une ou plusieurs des caractéristiques de chacun de ces éléments. Un article intéressant sur les applications de la courbe ROC en biologie ici
+
+* La courbe ROC est une représentation graphique de la relation existante entre la sensibilité et la spécificité d’un test pour toutes les valeurs seuils possibles. L’ordonnée représente la sensibilité et l’abscisse correspond à la quantité (1- spécificité).
+
+* De manière synthétique il s’agit de tracer l’évolution en fonction des seuils de la proportion entre vrais positifs et la proportion de faux positifs. Si la relation entre les deux proportions est égale à 1 (droite) l’AUC = 0.5. Dans ces conditions, la proportion entre vrais positifs et faux positifs sera identique et le prédicteur (algorithme : reg logistique pas exemple) ne fera pas mieux que le hasard. Plus l’aire sous courbe sera supérieure à 0.5, plus l’algoritme sera plus performant : % de détection des VP > % de détection des FP.
+
+* Un des apports majeurs de la courbe ROC est la possibilité de calculer le seuil optimal de détection (vv versus dcd). Ce dernier est essentiel pour le calcul de la matrice des confusions et donc pour l’évaluation des performances de l’algoritme (régression logistique dans notre cas). Il existe plusieurs indices permettant de calculer les seuils. Nous utiliserons l’indice de Youden qui est simple à calculer et performant (cf. cours). Ce dernier correspond au point de la courbe le plus éloigné de la diagonale (AUC = 0.5).
+
+* Cepandant, la recherche du seuil (choix de l’indice) néssecite la prise en compte de données épidémiologiques.
+
+ + la prévalence (% de vivant : annotations ) ne doit pas trop s’éloigner de 50%.
+ + L’intéret médicaux économique : A titre d’exemple : Si une maladie possède un traitement onéreux aux effets secondaires potentiellement graves, il convient de limiter au maximum le nombre de faux positifs, donc de choisir une spécificité élevée. La valeur seuil sera située dans ce cas dans la partie inférieure gauche de la courbe ROC. À l’inverse, certaines maladies possèdent des complications graves qui peuvent être évitées si un traitement simple est mis en place précocement : le test doit posséder une sensibilité élevée. La valeur seuil se situera au niveau de la partie supérieure droite de la courbe ROC.
+
+##### <FONT color='#000033'> 2.4. Courbe Sen Spe vs seuil</FONT>
+###### <FONT color='#000033'> 2.4.1 Script</FONT>
+```{r}
+Valid_ROC <- function(obs, pred, direction = 0, threshold  = NULL, graph = T)
+{
+  require(pROC)
+  require(caret)
+  if(!is.factor(obs)){obs <- factor(obs)}
+  lev        <- levels(obs)
+  data_logit <- data.frame(obs = factor(obs), pred = pred)
+  data_roc   <- roc(obs,pred)
+  cir        <- ci(data_roc)
+  data_spec  <- data.frame( sens    = data_roc$sensitivities ,
+                            spec    = data_roc$specificities ,
+                            thr     = data_roc$thresholds    ,
+                            youden  = data_roc$sensitivities + data_roc$specificities - 1
+                           )
+  cir <- data.frame(roc = c(cir, youden = max(data_spec$youden) )) ; rownames(cir) <-c('AUC_lower','AUC','AUC_upper','youden')
+  #-> si argument nulle alors calcul du seuil par la méthode de Youden
+  if (is.null(threshold))
+  {
+    id       <- which.max(data_spec$youden) ; data_spec[id,] ;   
+    best_thr <- data_spec[id,3]
+  }else{best_thr <- threshold}
+  #-> binarisation
+  if(direction == 0){dir_name <- lev[1] ; ndir_name <- lev[2] }else{dir_name = lev[2] ; ndir_name <- lev[1]}
+  fac_roc    <- rep(dir_name,nrow(data_logit))
+  id         <- which(pred >= best_thr) ; fac_roc[id] <- ndir_name ; fac_roc <- factor(fac_roc)
+  conf_mat_1 <- confusionMatrix(fac_roc, obs)
+  result     <- data.frame(Confusion = c(                 conf_mat_1$overall[1],
+                                                          conf_mat_1$overall[3], 
+                                                          conf_mat_1$overall[4], 
+                                                          conf_mat_1$byClass[1],
+                                                          conf_mat_1$byClass[2],
+                                                          conf_mat_1$byClass[3],
+                                                          conf_mat_1$byClass[4],
+                                                          conf_mat_1$byClass[7],
+                                                          Threshold  = best_thr
+                                          ) 
+                         )
+  all_result <- list( result = result, Confusion = conf_mat_1$table, roc = cir)
+  #--> graphique
+  if(graph)
+    {  data_gr    <- melt(data_spec, id.vars = 'thr') 
+       gr         <- ggplot(data = data_gr) + geom_line(aes(x = thr, y = value, color = variable )) + 
+       ylab('Probability') + xlab('threshold') + theme(legend.title = element_blank()) + geom_vline( xintercept = best_thr, color = '#0066CC')
+      #--> courbe roc
+      plot.roc(data_roc, print.auc=TRUE, print.thres=TRUE,col="#0066CC")
+      all_result[['graph']] <- gr
+  }  
+      return( all_result)
+}
+result <- Valid_ROC(XY$event, full_model$fitted.values, graph = T)
+```
+* graph (i) il fournit la courbe ROC avec l’AUC, la valeur du seuil (+ IC) calculé à partie de l’indice de Youden
+
+*La fonction Valid_ROC utilise les librairies pROC et caret.Elle permet de calculer les performances d'un modèle de classification binaire en utilisant la courbe ROC (Receiver Operating Characteristic) ainsi que les métriques de performance telles que la sensibilité, la spécificité et la valeur prédictive positive et négative. Elle permet également de déterminer le seuil optimal pour la classification binaire en utilisant la méthode de Youden. Enfin, elle génère un graphique de la courbe ROC et des métriques de performance associées.*
+
++ l’AUC et trace le courbe ROC à la conditon que l’argument graph = T
++ le seuil optimal (best_thr : cf. code) à l’aide de l’indice de Youden (à la condition que l’argument threshold = NULL. Si cet argument est différent (0 < threshold < 1), le seuil optimal correspondra à la valeur de l’argument)
++ la matrice de confusion au seuil optimal.
+
+* Les résultats obtenus avec la fonction Valid_ROC sont stockés dans l'objet result, qui est une liste contenant trois éléments
+
+
+###### <FONT color='#000033'> 2.4.2 Résultats</FONT>
+
+
+
+```{r}
+kable(result$roc,align = rep("c", ncol(result$roc))) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+* $roc contient les résultats de l'analyse ROC, y compris l'aire sous la courbe (AUC) de la courbe ROC, les bornes inférieure et supérieure de l'AUC, ainsi que le seuil de classification optimal basé sur la méthode Youden.
+
+```{r}
+kable(result$result,align = rep("c", ncol(result$result))) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+* result$result contient les mesures de performance du modèle, telles que l'exactitude, la sensibilité, la spécificité, la valeur prédictive positive et négative, ainsi que la F1-score et le seuil choisi pour binariser les prévisions.
+
+```{r}
+kable(result$Confusion,align = rep("c", ncol(result$Confusion))) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+* $Confusion est une matrice de confusion pour le modèle, donnant le nombre d'observations correctement classées et mal classées pour chaque niveau de la variable de réponse et de la variable prédite au seuil optimal.
+
+Si on interprète ces résultats, on peut dire que l'aire sous la courbe ROC est de 0,897, ce qui indique une performance globalement bonne du modèle. Les autres mesures de performance incluent une exactitude de 0,85, une sensibilité de 0,91 et une spécificité de 0,74. La matrice de confusion indique que le modèle a correctement classé 255 des 299 observations.
+
+* Les graphiques
+
+*graph (ii), il fournit l’évolution des spécificités et des sensibilités an fonction des valeurs de seuil. Il montre aussi l’évolution de l’indice de Youden en fonction des seuils.*
+
+ +*Dans le cadre de cette analyse, l’indice Youden privilégie la spécificité au profil de la sensibilité. Il est bien évidemment possible de modifier le seuil en fonction des priorités de l’étude (privilégier le sensibilité ou la spécificité, ou un “équilibre” entre les deux)*
+```{r}
+result$graph
+```
+
+
+
+</FONT></FONT>
+<hr style="border: 1px  solid gray">
+</hr>
+
+#### <FONT color='#001279'> 3 Regression logistique ascendente</FONT>
+
+##### <FONT color='#000033'> 3.1. Rappels</FONT>
+
+* Comme nous l’avons vu lors de l’analyse des z scores, certains coefficients des variables ne semblent pas pertinents (non significatifs).
+
+* La sélection progressive des variables se fait en calculant le rapport de vraisemblance entre les modéles à p variables et p + 1 variables. Aprés avoir calculer le rapport, on validera l’inclusion de la nouvelle variable à l’aide d’un test de Wald. Si le test conclue à une acceptation H0 (egalité des modèles à p et p +1 variable), l’apport de la variable (en terme du rapport de vraisemblance) est faible et donc la variable n’améliorera pas la prédiction. En conséquence, elle ne sera pas rajoutée au modèle.
+
+* La fonction stepAIC du package MASS réalise automatiquemnt la procédure d’inclusion et fournit le modèle avec les variables retenues (donc pertinentes pour l’estimation de la prédiction)
+
+##### <FONT color='#000033'> 3.2. Description de la méthode</FONT>
+
+* L’utilisation de la fonction stepAIC nécessite en amont quelques calculs préliminaires
+
+ + la mise en forme des modéles plein et modèles vides en utilisant la fonction as.formula que nous avons déjà utilisé au paragraphe 2 (pour le modèle plein)
+
+ + Le calcul des régressions logistiques sur le modèle vide et le modèle plein. Le code est le suivant :
+
+```{r}
+empty_form    <- as.formula(paste0(names(dfw)[id_pred] ,'~1'))
+ full_form     <- as.formula(paste0(names(dfw)[id_pred], ' ~ ', paste0(names(dfw)[-id_pred], collapse = ' + ')))
+ empty_model   <- glm(empty_form , family=binomial(link=logit), data = XY)
+ full_model    <- glm(full_form  , family=binomial(link=logit), data = XY)
+ forward_model <-  stepAIC(empty_model,direction = 'forward',  scope = list(upper = full_model), trace = F)
+ summary(forward_model)
+```
+###### <FONT color='#000033'> 3.2.1 Résultats</FONT>
+```{r}
+result_forward <- Valid_ROC(XY$event, forward_model$fitted.values, graph = F)
+```
+
+La fonction summary extrait les résultats importants. Parmi ces derniers :
+
+le tableau des coefficients résume les variables sélectionnées par la méthode ascendante. les z scores montrent que les coefficients de toutes les variables incluses dans le modèle sont significatives (pvalue < 0.05). La variable prédictive peut être estimée à l’aide de 5 variables au lieu de 12.
+
+De manière concomitante, il est indispensable de comparer le critère d’AKAIKE du modèle forward (AIC = 235.49) avec celui du modèle plein (AIC = 245.55). Dans notre analyse, on remarque que la qualité de l’estimation est meilleure avec le modèle forward (5 variables) qu’avec le modèle plein (12 variables). Autrement dit, certaines variables du modèle plein diminuent la qualité d’estimation de la variable prédictive ! (ce qui n’est pas toujours le cas)
+
+Nous pouvons maintenant étudier la qualité de l’ajustement avec le modèle forward.
+
+
+* L’AUC :
+
+```{r}
+kable(result_forward$roc,align = rep("c", ncol(result_forward$roc))) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+
+* La matrice des confusions au seuil optimal : 
+```{r}
+kable(result_forward$Confusion,align = rep("c", ncol(result_forward$Confusion))) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+
+
+* Spécificité et Sensibilité :
+```{r}
+kable(result_forward$result,align = rep("c", ncol(result_forward$result))) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+
+
+
+###### <FONT color='#000033'> 3.2.2 Courbe ROC</FONT>
+
+```{r}
+result_forward <- Valid_ROC(XY$event, forward_model$fitted.values, graph = T)
+```
+
+```{r}
+result_forward$graph
+```
+
+
+
+
+##### <FONT color='#000033'> 3.3. Comparaison des résultats</FONT>
+
+* La comparaison des résultats entre le modèle plein et le modèle ascendant montre :
+ + que le critère d’Akaike du modèle ascendant est légèrement supèrieur à celui du modèle plein ce qui signifie
+  - l’estimation de la variable prédictive par le modèle ascendant est légèrement supérieure au modèle plein.
+  - les variables non sélectionnées dans le modèle réduit (modèle ascendant) sont réellement des variables non participatives
+  - Dans un cadre plus général, il n’est pas évident que l’ajustemant (critère AIC) soit meilleur pour le modèle réduit. En effet certaines variables non sélectionnées peuvent avoir un effet même faible sur la qualité de l’ajustement.
+  - Attention cependant, une meilleure qualité d’ajustement ne signifie pas que les performances de diagnostique du classifieur seront meilleures puisque ces dernières sont évaluées à partir de seuils
+ + les AUC entre les deux modèles sont analogues (AUC plein = 0.897 vs AUC réduit =0.893 ). Les performances diagnostiques sont identiques
+ + L’allure des courbes ROC entre les deux modèles est identique (cf courbe ROC)
+ + Les seuils calculés à partir de l’indice de Youden ne sont pas les mêmes (plein = 0.495 vs réduit = 0.39). Il est donc très important, pour obtenir une classification (matrice des confusions) analogue de bien modifier la valeur des seuils. De manière générale, il faut être très vigilant sur le choix des seuil car il conditionne les performances de la méthode. Il ne faut donc pas se contenter de choisir le seuil de 0.5 qui est le plus souvent fournit par défaut.
+* la figure suivante compare les courbes ROC
+```{r}
+roc1 <- plot.roc(factor(XY$event),forward_model$fitted.values, percent = T, col = '#CC3300')
+roc2 <- lines.roc(factor(XY$event),full_model$fitted.values, percent=T, col="#0066CC",  print.thres=TRUE)
+legend("bottomright", legend=c("ascend_model", "full_model"), col=c('#CC3300', "#0066CC"), lwd=2)
+
+result_forward$result
+```
+
+* En utilisant les seuils calculés par l’indice de Youden, les résultats sont les suivants :
+
+```{r}
+kable(result_forward$result,align = rep("c", ncol(result_forward$result))) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+
+* On remarque que la sensibilité est un peu plus faible avec le modèle ascendant (0.90 vs 0.87) et la spécificité un peu élevée. La précision est très légèrement plus faible avec le modèle ascendant.
+  + pour le modèle plein , le nombre de FN = 25 et le nombre de FP = 19, le nombre VP + VN = 255
+  + pour le modèle ascendant, le nombre de FN = 20 et le nombre de FP = 26, le nombre VP + VN = 253
+
+</FONT></FONT>
+<hr style="border: 1px  solid gray">
+</hr>
+
+#### <FONT color='#001279'> 4 Validation croisée</FONT>
+##### <FONT color='#000033'> 4.1. Les objectifs</FONT>
+
+* Dans le cadre de la généralisation, nous allons réaliser une validation croisée par la méthode des kfold (= 5) en reprenant uniquement les variables du modèle restreint. On crée donc la formule de sélection des variables suivantes event ~ time + frac + creat + age + Na
+
+* Pour réaliser la partition, nous utilisons la fonction CreateFold du package caret.
+
+* Pour chaque jeux (fold)
+
+ + Nous réalisons une régression logistique sur les données d’entrainement en utilisant la fonction glm : les résultats sont stockés dans la liste model
+ + Nous calculons la prédiction des Y pour les données en test à l’aide de la fonction : predict(model, newdata = X_test, type = ‘response’) ou model correspond aux
+ + Nous calculons à laide de la fonction Valid_ROC l’ensemble des résultats
+
+
+
+###### <FONT color='#000033'> 4.1.1 Les résultats</FONT>
+
+* Nous concaténons les résultats puis nous en calculons les moyennes. Les résultats sont les suivants :
+
+* rmq: en fonction de la randomisation les résultats peuvent être légérement différent !
+
+* Les tableaux suivants fournissent les résultats obtenus pour chaque partition :
+
+```{r, include=FALSE}
+XY
+X <- XY[1:12]
+Y <- XY$event
+
+empty_form    <- as.formula(paste0(names(XY)[id_pred] ,'~1'))
+XY_bis <- data.frame(XY[7], XY[3], XY[5], XY[1], XY[6])
+full_form     <- as.formula(paste0(names(XY)[id_pred], ' ~ ', paste0(names(XY_bis), collapse = ' + ')))
+full_form
+
+id_fold <- createFolds(Y, k=5, TRUE) #Retourne les indices des données dans les diff folds
+id_fold
+
+#Pour chaque jeux, on réalise une régression logistique sur les données d'entrainement
+
+model <- list()
+
+for (i in 1 : length(id_fold)){
+
+  XY_train <- XY[id_fold[[i]],] 
+  XY_test  <- XY[-id_fold[[i]],]
+
+  full_model  <- glm(full_form, family=binomial(link=logit), data = XY_train)
+
+  pred <- predict(full_model, newdata = XY_train, type = 'response')
+
+  model[[i]] <- Valid_ROC(Y[id_fold[[i]]], pred, threshold = NULL, graph = T)
+
+}
+model 
+
+resultat_roc <- NULL
+for (i in 1 : length(id_fold)){
+
+  resultat_roc <- cbind(resultat_roc, as.matrix(model[[i]]$roc))
+
+}
+resultat_roc <- as.data.frame(resultat_roc)
+names(resultat_roc) <- paste("kfold",seq(1,length(id_fold)), sep = '')
+resultat_roc
+
+
+resultat_res <- NULL
+for (i in 1 : length(id_fold)){
+
+  resultat_res <- cbind(resultat_res, as.matrix(model[[i]]$result))
+
+}
+resultat_res <- as.data.frame(resultat_res)
+names(resultat_res) <- paste("kfold",seq(1,length(id_fold)), sep = '')
+resultat_res
+
+mean_roc <- apply(resultat_roc, MARGIN = 1, FUN = mean)
+mean_roc
+
+sd_roc <- apply(resultat_roc, MARGIN = 1, FUN = sd)
+sd_roc
+
+result_roc <- cbind(mean_roc,sd_roc)
+result_roc
+
+
+
+mean_res <- apply(resultat_res, MARGIN = 1, FUN = mean)
+mean_res
+
+sd_res <- apply(resultat_res, MARGIN = 1, FUN = sd)
+sd_res
+
+result_res <- cbind(mean_res,sd_res)
+```
+
+```{r}
+kable(resultat_roc,align = rep("c", ncol(resultat_roc))) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+
+```{r}
+kable(resultat_res,align = rep("c", ncol(resultat_roc))) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center")
+```
+
+
+###### <FONT color='#000033'> 4.1.2 Conclusion</FONT>
+
+En conclusion voilà comment nous pouvons interpréter les différents paramètres:
+
+* AUC (Area Under Curve) : On voit que les valeurs d'AUC sont toutes relativement élevées (entre 0,78 et 0,91) avec des écart-types assez faibles. Cela indique que le modèle a une performance globalement bonne et stable.
+
+* Sensibilité et spécificité :  On voit que la sensibilité varie de 0,67 à 0,95 et la spécificité varie de 0,67 à 1. Les écart-types sont assez importants, ce qui indique que la performance du modèle varie selon les échantillons utilisés pour la validation croisée.
+
+* Précision positive et négative : On voit que la précision positive varie de 0,86 à 1 et la précision négative varie de 0,6 à 0,88. Les écart-types sont assez importants, ce qui indique que la performance du modèle varie selon les échantillons utilisés pour la validation croisée.
+
+F1-score : On voit que le F1-score varie de 0,81 à 0,95. Les écart-types sont assez faibles, ce qui indique que le modèle a une performance relativement stable.
+
+Seuil : On voit que les valeurs de seuil varient beaucoup d'un échantillon à l'autre, ce qui indique que le modèle peut être sensible à la façon dont les échantillons sont divisés pour la validation croisée.
+
+En résumé, on peut dire que le modèle a une performance globalement bonne, mais que cette performance varie selon les échantillons utilisés pour la validation croisée. Il peut donc être intéressant d'explorer différentes stratégies de validation croisée pour évaluer la stabilité des résultats.
+
+
+</FONT></FONT>
+<hr style="border: 1px  solid gray">
+</hr>
+
