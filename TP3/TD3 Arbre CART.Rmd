@@ -1,0 +1,418 @@
+---
+title: "<FONT color='#3399CC'><FONT size = 4 ><DIV align= center> ARBRE_CART </DIV></FONT></FONT>"
+output:
+  html_document:
+    highlight: textmate 
+    theme:   readable  
+    toc: yes
+    toc_depth: 6
+    toc_float: true
+---
+  
+  
+```{=html}
+<style type="text/css">
+  body, td {font-size: 17px;}
+code.r{font-size: 3px;}
+pre { font-size: 15px;}
+</style>
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F)
+
+```
+
+<FONT color='#33CCFF'><FONT size = 4 >
+  
+::: {align="center"}
+ARBRES CART EN CLASSIFICATION
+:::
+  
+  </FONT></FONT>
+  
+  <FONT color='#0099CC'><FONT size = 4 >
+  
+::: {align="center"}
+Guilherme & Clémence : Esiee Paris 2022-2023
+:::
+  
+</FONT></FONT>
+  
+<hr style="border: 1px  solid black">
+  
+</hr>
+
+#### <FONT color='#3300CC'> 1. Introduction </FONT>
+
+* L’objectif de ce Travail est de vous initier à l’utilisation des arbres en ML à l’aide des packages rpart et rpart.plot. Bien que les arbres de classification ne soient pas beaucoup utilisés directement, leur compréhension est indispensable car ils sont à la base de très nombreuses méthodes bien plus performantes telles que les forêts aléatoires.
+
+* Les étapes sont les suivantes
+
+  + Description et utilisation de la méthode CART avec R
+  + Processus d’élagage
+  + Validation croisée avec des critères de complexité (nombre de feuilles après élagage) différents
+  + Qualité de l’ajustement en généralisation avec courbe ROC, seuillage et matrice des confusions
+
+
+* Concernant la qualité de l’ajustement, nous utiliserons la fonction locale que nous avons décrite dans le TD sur la régression logistique multiple.
+
+
+#### <FONT color='#3300CC'> 2. Description de la méthode CART </FONT>
+
+##### <FONT color='#000033'> 2.1. Chargement des packages et des données </FONT>
+
+###### <FONT color='#000033'> 2.1.1. Packages </FONT>
+
+```{r, include=FALSE}
+rm(list = ls())
+LoadPack <- function(Packrequired)
+{
+  for(i in 1:length(Packrequired))
+  {
+    if(require(Packrequired[i], character.only = TRUE) == FALSE){install.packages(Packrequired[i])}
+    library(Packrequired[i],character.only = TRUE)
+  }
+  print('Package ... DONE')
+}
+pack <- c('ggplot2','caret', 'pROC','reshape2', 'kableExtra','rpart','rpart.plot' )
+#-> chargement des packages
+LoadPack(pack)
+
+```
+
+Description des packets et de leur utilisation :
+
+*   ggplot2   : Utilisé pour la création de graphiques esthétiques facilitant la visualisation des données
+*   caret     : (Classification And REgression Training) Utilisé pour la création de modèle de prédiction avec des outils utile pour :
+ + data splitting
+ + pre-processing
+ + feature selection
+ + model tuning using resampling
+ + variable importance estimation
+*   pROC      : Utilise pour la visualisation des AUCs
+*   reshape2  : Utile pour la manipulation et la transformation des données
+* kableExtra  : Utile pour produire des tableaux HTML
+*   rpart     : Construction d'arbres de décisions
+* rpart.plot  : Visualisation de ces arbres de décisions
+
+Chargement des données:
+```{r}
+df <- read.table('heart.csv', header = T, sep = ',', dec = '.')
+```
+
+Fonction Valid_ROC à expliquer
+
+```{r, eval=FALSE}
+Valid_ROC <- function(obs, pred, direction = 0, threshold  = NULL, graph = T)
+{...}
+```
+
+
+```{r, include=FALSE}
+Valid_ROC <- function(obs, pred, direction = 0, threshold  = NULL, graph = T)
+{
+  require(pROC)
+  require(caret)
+  if(!is.factor(obs)){obs <- factor(obs)}
+  lev        <- levels(obs)
+  data_logit <- data.frame(obs = factor(obs), pred = pred)
+  data_roc   <- roc(obs,pred)
+  cir        <- ci(data_roc)
+  data_spec  <- data.frame( sens    = data_roc$sensitivities ,
+                            spec    = data_roc$specificities ,
+                            thr     = data_roc$thresholds    ,
+                            youden  = data_roc$sensitivities + data_roc$specificities - 1
+                           )
+  cir <- data.frame(roc = c(cir, youden = max(data_spec$youden) )) ; rownames(cir)  
+  c('AUC_lower','AUC','AUC_upper','youden')
+  #-> si argument nulle alors calcul du seuil par la méthode de Youden
+  if (is.null(threshold))
+  {
+    id       <- which.max(data_spec$youden) ; data_spec[id,] ;   
+    best_thr <- data_spec[id,3]
+  }else{best_thr <- threshold}
+  #-> binarisation
+  if(direction == 0){dir_name <- lev[1] ; ndir_name <- lev[2] }else{dir_name = lev[2] ; ndir_name <- lev[1]}
+  fac_roc    <- rep(dir_name,nrow(data_logit))
+  id         <- which(pred >= best_thr) ; fac_roc[id] <- ndir_name ; fac_roc <- factor(fac_roc)
+  conf_mat_1 <- confusionMatrix(fac_roc, obs)
+  result     <- data.frame(Confusion = c(                 conf_mat_1$overall[1],
+                                                          conf_mat_1$overall[3], 
+                                                          conf_mat_1$overall[4], 
+                                                          conf_mat_1$byClass[1],
+                                                          conf_mat_1$byClass[2],
+                                                          conf_mat_1$byClass[3],
+                                                          conf_mat_1$byClass[4],
+                                                          conf_mat_1$byClass[7],
+                                                          Threshold  = best_thr
+                                          ) 
+                         )
+  all_result <- list( result = result, Confusion = conf_mat_1$table, roc = cir)
+  #--> graphique
+  if(graph)
+    {  data_gr    <- melt(data_spec, id.vars = 'thr') 
+       gr         <- ggplot(data = data_gr) + geom_line(aes(x = thr, y = value, color = variable )) + 
+       ylab('Probability') + xlab('threshold') + theme(legend.title = element_blank()) + geom_vline( xintercept = best_thr, color = '#0066CC')
+      #--> courbe roc
+      plot.roc(data_roc, print.auc=TRUE, print.thres=TRUE,col="#0066CC")
+      all_result[['graph']] <- gr
+  }  
+      return( all_result)
+}
+```
+
+###### <FONT color='#000033'> 2.1.2. Description des données </FONT>
+
+* Les maladies cardiovasculaires (MCV) sont la première cause de décès dans le monde, prenant environ 17,9 millions de vies chaque année, ce qui représente 31 % de tous les décès dans le monde. Quatre décès par 5 sont dus à des crises cardiaques et à des accidents vasculaires cérébraux, et un tiers de ces décès surviennent prématurément chez des personnes de moins de 70 ans. L’insuffisance cardiaque est un événement courant causé par les maladies cardiovasculaires et cet ensemble de données contient 11 caractéristiques qui peuvent être utilisées pour prédire une éventuelle maladie cardiaque.
+
+* Les personnes atteintes de maladies cardiovasculaires ou à haut risque cardiovasculaire (en raison de la présence d’un ou plusieurs facteurs de risque tels que l’hypertension, le diabète, l’hyperlipidémie ou une maladie déjà établie) ont besoin d’une détection et d’une prise en charge précoces dans lesquelles un modèle d’apprentissage automatique peut être d’une grande aide.
+
+* Les variables prédictives (Prédicteur):
+  + Âge : âge du patient [années]
+  + Sexe : sexe du patient [M : Masculin, F : Féminin]
+  + ChestPainType : type de douleur thoracique [TA : Angine typique, ATA : Angine atypique, NAP : Douleur non angineuse,  ASY : Asymptomatique]
+  + BP au repos : pression artérielle au repos [mm Hg]
+  + Cholestérol : cholestérol sérique [mm/dl]
+  + FastingBS : glycémie à jeun [1 : si FastingBS > 120 mg/dl, 0 : sinon]
+  + ECG au repos : résultats de l’électrocardiogramme au repos [Normal : normal, ST : présentant une anomalie de l’onde ST-T (inversions de l’onde T et/ou élévation ou - dépression du segment ST > 0,05 mV), HVG : montrant une        hypertrophie ventriculaire gauche probable ou certaine selon les critères d’Estes]
+  + MaxHR : fréquence cardiaque maximale atteinte [Valeur numérique entre 60 et 202]
+  + ExerciseAngina : angine induite par l’effort [O : Oui, N : Non]
+  + Oldpeak : oldpeak = ST [Valeur numérique mesurée en dépression]
+  + ST_Slope : la pente du segment ST d’exercice maximal [Haut : ascendant, Plat : plat, Bas : descendant]
+ 
+* la variable à prédire
+HeartDisease : classe de sortie [1 : maladie cardiaque, 0 : normal]
+
+Les données sont les suivantes (10 premières lignes)
+
+```{r}
+head(df,10) %>% kbl(digits=3) %>% kable_styling(bootstrap_options = "condensed", full_width = F, position = "center")
+```
+
+
+#### <FONT color='#3300CC'> 3. Description des fonctions rpart.control et rpart </FONT>
+
+* Le code source la méthode CART n’est pas publique. la fonction rpart procède de manière très proche.
+
+* Cette fonction réalise les arbres de décision (en classification ou en régression) et un élagage par validation croisée.
+
+##### <FONT color='#000033'> 3.1. fonction rpart.control </FONT>
+
+
+* Au préalable de son utilisation, il est nécessaire de réaliser des pré-réglages à l’aide de la fonction rpart.control. Les arguments principaux sont les suivants:
+  + minsplit : Nombre minimum d’observations devant exister dans un noeud pour être diviser
+  + minbucket : Nombre minimal d’obrevation dans une feuille (terminale)
+  + xval : nombre de validation croisée
+  + maxdepth : profondeur de l’arbre
+  + cp : équivalent au coût complexité par défaut cp = 0.01. Si cp = 0, la profondeur de l’arbre sera maximale. Nous concernant, il s’agira du paramètres décisionnel quant aux choix de l’élagage
+  
+##### <FONT color='#000033'> 3.2. fonction rpart </FONT>
+
+* Une fois les pré-réglages effectués, nous pouvons réaliser la classification en validation croisée à l’aide de la fonction rpart. les principaus arguments sont les suivants :
+
+formula : déclaration de la variable à expliquer et des variables explicatives (cf. TP précédents)
+data : dataframe étudié
+method : en classification = ‘class’ et en regrassion = ‘anova’
+parms : identification de la méthode de division (split) : cette argument est une liste pouvant contenir plusieurs éléments. dans notre cas, cette argument sera parms = list(split = ‘gini’)
+control : correspond à la fonction rpart.control
+
+##### <FONT color='#000033'> 3.3 Analyse de l’arbre complet </FONT>
+
+Dans un premier temps, on réalise l’analyse sur un arbre complet en incluant toutes les variables du prédicteur
+nombre de validation croisée = 10
+minbucket = 1 (“force” la profondeur de l’arbre)
+cp = 0 : développement de l’arbre entier
+
+```{r}
+#-> génération de la graine pour la validation croisée
+set.seed(785123)
+options_1 <- rpart.control(xval = 10, cp = 0, minbucket = 1)
+df$HeartDisease <- as.factor(df$HeartDisease)
+cart_1    <- rpart("HeartDisease~.",data = df, parm = list(split = 'gini'), control = options_1)   
+```
+
+###### <FONT color='#000033'> 3.2.1 Compléxité </FONT>
+
+* On peut visualiser l’arbre complet.. qui est “illisible”. Vouloir identifier les noeuds de segmentation des variables n’a aucun sens compte tenu de la profondeur de l’arbre. L’interprétation est impossible
+
+```{r}
+g1 =  prp(cart_1, cex  = 0.05)
+```
+
+###### <FONT color='#000033'> 3.2.2 Qualité de prédiction de l’arbre complet </FONT>
+
+* Pour estimer la qualité de prédiction sur l’arbre complet, on utilise la fonction predict, cette fonction retourne l’affectation sous forme d’une matrice à deux colonnes, chacune correspondant à la probabilité d’affectation à l’une des modalités de la variable à prédire
+
+```{r}
+pred_cart_1     <- predict(cart_1, type = 'prob')
+result          <- Valid_ROC(as.numeric(df$HeartDisease) - 1, pred_cart_1[,2], graph = T)
+```
+Les résultats des AUC pour la classification prédite sont les suivants :
+```{r, echo=FALSE}
+rownames(result$roc)[c(1,2,3,4)]<-c("AUC_lower", "AUC", "AUC_upper", "youden")
+head(result$roc) %>% kbl(digits=3) %>% kable_styling(bootstrap_options = "condensed", full_width = F, position = "center")
+```
+
+Les résultat des paramètres de la matrice de confusion 
+```{r, echo=FALSE}
+head(result$result) %>% kbl(digits=3) %>% kable_styling(bootstrap_options = "condensed", full_width = F, position = "center")
+```
+
+Les résultats de la matrice de confusion indiquent que le modèle a une précision globale de 0,99, ce qui est très élevé. Cela signifie que le modèle a correctement classé la grande majorité des échantillons que nous avons testé.
+
+La sensibilité de 0,985 indique que le modèle a correctement identifié la plupart des vrais positifs, ce qui est également très bon. La spécificité de 0,994 indique que le modèle a également correctement identifié la plupart des vrais négatifs.
+
+Le Pos Pred Value (valeur prédictive positive) de 0,993 indique que lorsque le modèle prédit un échantillon comme positif, il a raison environ 99,3% du temps. C'est aussi excellent.
+
+Dans l'ensemble, ces résultats semblent très prometteurs et indiquent que le modèle est efficace pour classifier les échantillons avec une précision élevée. Cependant, il est important de prendre en compte la profondeur de l'arbre en effet 
+
+#### <FONT color='#3300CC'> 4. Elagage </FONT>
+
+* la fonction rpart retourne de nombreux éléments dans une liste. Parmi ces derniers, le premier à analyser est le tableau cptable. Ce dernier indique :
+
+  + CP : les coûts complexités calculés à partir des différents élagages (seuls les principaux figurent dans la colonnes),
+  + split : correspond au nombre de divisons par CP
+  + rel err: nombre de mauvais classements en pourcentage SANS validation croisée (réalisation simple de l’arbre)
+  + xerror : nombre de mauvais classement on pourcentage AVEC validation croisée
+  + xstd : déviation standard pour chaque élagage obtenue par validation croisée
+  
+```{r}
+data.frame(cart_1$cptable)  %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+```
+
+* Pour élaguer l’arbre et déterminer le nombre de noeuds à garder, on utilise un graphique qui affiche l”erreur relative calculée par resubstitution (VC) en fonction du cout complexité. Chaque valeur du cout-complexité correspond à un arbre élagué. le trait en pointillé représente la moyenne géométrique des CP.
+
+```{r}
+plotcp(cart_1)
+```
+
+##### <FONT color='#000033'> 4.1 Sélection </FONT>
+
+* L’élagage de l’arbre est effectuée en utilisant le tableau et le graphique précédent. Deux approches sont possibles
+
+ + on choisit le cp qui correspond à l’erreur minimale (colonne xerror du tableau). La première valeur est égale à 0.3902 et correspond à un arbre à 3 divisions ce qui est insuffisant et risque d’entraîner un sous apprentissage. La seconde valeur min est 0.3926 et correspond à un arbre de 7 divisions pour un cp de 0.00731. Ce choix semble plus cohérent. De manière générale, la sélection de la division en fonction de l’erreur minimale est appelé règle 0-SE (SE… car in ne tient pas compte de la déviation standard)
+
+ + On choisit le plus petit arbre dont l’erreur soit inférieure à l’erreur minimale + 1 écart-type. cette règle est appelée 1-SE (régle de Breimann)
+
+ + Dans notre cas, les règles de sélection 0-SE et 1-SE conduisent à la même division
+
+##### <FONT color='#000033'> 4.2 Elagage </FONT>
+
+* L’élagage de l’arbre est réalisée à l’aide de la fonction prune en indiquant la valeur du CP choisie (0.0073171):
+
+```{r}
+prune_1 = prune(cart_1, cp = 0.0073171)
+rpart.plot(prune_1, type = 5)
+```
+
+* Comme on peut le constater, l’arbre après élagage est interprétable.
+
+ + la première variable sélectionnée est relative à l’onde ST. une élévation de la pente de l’onde ST (voie de dérivation D2) peut avoir des causes différentes dont les principales sont (i) une hypertrophie ventriculaire gauche, (ii) un infarctus du myocarde aiguë
+
+ + Dans le cas de d’absence d’élévation, la variable pertinente sera le type de douleur. Parmi ces dernière 91 % sont asymptomatiques (ce qui représente 40% de l’échantillon) avec un diagnostique de maladie cardiovasculaire (d’ou la difficulté de diagnostique). Concernant les douleurs symptomatiques ATA,NAP,TA, la troisième variable sélectionnée sera le sexe. Chez les Hommes, 71 % des douleurs symptomatiques sont liées à une maladie cardiovasculaire (accidents ?) tandis que chez les femmes seulement 27% des symptômes conduisent à une maladie (accident ?) cardiovasculaire.
+
+ + Dans le cas d’une élévation de l’onde ST, la variable pertinente sera le taux de cholestérol. Si ce dernier est inférieure à 43 mm/dl alors dans 72% , il n’y aura pas d’accident cardiovasculaire. Si le taux est supérieure à 43 mm/dl, la sélection dépendra du type de douleur. Si la douleur est asymptomatique et si elle apparaît à l’effort (angor d’effort), dans 71% des cas, il y aura maladie cardiaque (accident ?)
+
+##### <FONT color='#000033'> 4.3 Qualité de prédiction de l’élagage </FONT>
+
+* La courbe ROC fournit une AUC de 90% ce qui présage une bonne prédictibilité en généralisation.
+
+```{r}
+pred_prune_1     <- predict(prune_1, type = 'prob')
+result_prune     <- Valid_ROC( as.numeric(df$HeartDisease) - 1, pred_prune_1[,2], graph = T)
+result_prune$roc
+```
+
+* La matrice des confusions au seuil correspondant à l’indice de Youden :
+
+```{r}
+result_prune$Confusion
+result_prune$result
+```
+__Conclusions__
+
+* Après Elagage de l’arbre, on constate :
+
+ + que le nombre de variables importantes pour la classification des maladies cardiovasculaires est restreint. Cela permet donc d’éliminer des variables superflues.
+ + que la profondeur de l’arbre après élagage permet une interprétation des données ( … et uniquement des données fournies .. prudence et parcimonie en Santé).
+ + que l’élagage permet une bonne prédiction en généralisation que nous devons cependant étudier et valider.
+ 
+* Dans un cadre de recherche opérationnelle, il serait impératif :
+
+ + de tester la prédiction à l’aide d’un jeux de données de validation (qui n’a jamais servi ni à l’apprentissage ni au test)
+ + de tester la prédiction en sélectionnant différentes profondeurs d’arbres en proximité des règles 0-SE et 1-SE.
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+
+#### <FONT color='#3300CC'> 5. TO-DO - Déploiement - Validation </FONT>
+
+* Déterminez la qualité de l’ajustement en phase de déploiement.
+ + le jeux de déploiement correspond à 15 % du jeux de données initial
+ + On choisira le meilleur CP observé (par validation croisée) sur le jeu d’entraînement/validation
+ + Comparez et interpréter les résultats par rapport à ceux obtenus après élagage du jeu complet (sans déploiement)
+*rmq* les résultats sont variables (mais convergents) dans la mesure ou ils dépendent de l’échantillonnage
+
+* Table d’élagage
+
+```{r}
+id_validation    <- createDataPartition(1:nrow(df), p = 0.85, list = F) 
+XY_validation    <- df[id_validation,]     # variable à prédire
+```
+
+```{r}
+set.seed(785123)
+options_2 <- rpart.control(xval = 10, cp = 0, minbucket = 1)
+XY_validation$HeartDisease <- as.factor(XY_validation$HeartDisease)
+cart_2    <- rpart("HeartDisease~.",data = XY_validation, parm = list(split = 'gini'), control = options_2)  
+```
+
+
+
+
+```{r}
+data.frame(cart_2$cptable)  %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+```
+
+```{r}
+plotcp(cart_2)
+```
+
+
+```{r}
+prune_2 = prune(cart_2, cp = 0.0073171)
+rpart.plot(prune_2, type = 5)
+```
+
+```{r}
+pred_prune_2     <- predict(prune_2, type = 'prob')
+result_prune_2     <- Valid_ROC( as.numeric(XY_validation$HeartDisease) - 1, pred_prune_2[,2], graph = T)
+result_prune_2$roc
+```
+
+* Résultats courbe ROC
+
+```{r}
+result_prune_2$roc %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+```
+
+* Matrice des confusions au seuil déterminé par l’indice de Youden:
+
+```{r}
+result_prune_2$Confusion %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+```
+
+
+```{r}
+result_prune_2$result %>% kbl() %>%  kable_styling( position = "center", full_width = FALSE)
+```
+
+
+
+
+
+
